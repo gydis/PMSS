@@ -35,7 +35,7 @@ foreach($users AS $thisUser) {    // Loop users checking their instances
     }
 
     // Connect to php-cgi socket
-    for ($i = 0; $i < 4; $i++) {  // Adjust the number 4 according to your `max-procs` value
+    for ($i = 0; $i < 1; $i++) {  // Adjust the number 4 according to your `max-procs` value
         $socket = fsockopen("unix:///home/{$thisUser}/.lighttpd/php.socket-$i", 0, $errno, $errstr, 1);
         if (!$socket or $errno or $errstr) {        
             echo "Error when attempting to connect to socket /home/{$thisUser}/.lighttpd/php.socket-$i: {$errno}, {$errstr}\n";
