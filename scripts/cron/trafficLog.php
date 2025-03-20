@@ -26,8 +26,15 @@ if (file_exists('/etc/seedbox/config/localnet')) {
 require_once '/scripts/lib/networkInfo.php';
 
     // Collect the current iptables stats and then reset the counters
-$usage = `/sbin/iptables -nvx -L OUTPUT | grep -v " MARK "; /sbin/iptables -Z OUTPUT`; 
+$usage = `/sbin/iptables -nvx -L OUTPUT | grep -v " MARK "; /sbin/iptables -Z OUTPUT`;
 if (empty($usage)) die(date('Y-m-d H:i:s') . " **** FATAL: Empty output from iptables???\n");
+
+// Debian 11 iptables -Z output doesn't work anymore .... we might miss a tiny fraction this way, but atleast not exponential growth
+$monitoringRules = shell_exec('/scripts/util/makeMonitoringRules.php');
+if (!empty($monitoringRules)) {
+    passthru('/sbin/iptables -F OUTPUT'); // let's first clear old rules
+    passthru($monitoringRules);
+}
 
 $thisUsageFile = '/tmp/trusage-' . date('Y-m-d_Hi') . '-' . sha1( time() . rand(0,1500000) );  // If too predictable filename someone could in theory intercept ...
 if (!file_put_contents($thisUsageFile, $usage)) die( date('Y-m-d H:i:s') . ": Could not write data usage file {$thisUsageFile} with {$usage}\n\n");

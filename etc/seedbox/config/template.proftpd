@@ -1,3 +1,4 @@
+# Include module configuration
 Include /etc/proftpd/modules.conf
 
 # Disable IPv6
@@ -8,7 +9,7 @@ UseIPv6                         off
   IdentLookups                  off
 </IfModule>
 
-ServerName                      "%SERVERNAME%"
+ServerName                      "le4-0-76-80pendleton.pulsedmedia.com"
 ServerType                      standalone
 DeferWelcome                    off
 MultilineRFC2228                on
@@ -19,7 +20,6 @@ ShowSymlinks                    on
 TimeoutNoTransfer               180
 TimeoutStalled                  300
 TimeoutIdle                     600
-
 
 DisplayLogin                    welcome.msg
 DisplayChdir                    .message true
@@ -37,15 +37,14 @@ MaxClientsPerUser               16
 MaxClientsPerHost               16
 PassivePorts                    60000 65535
 
-
 # Set the user and group that the server normally runs at.
 User                            proftpd
 Group                           nogroup
 
 Umask                           022  022
 AllowOverwrite                  on
-TransferLog /var/log/proftpd/xferlog
-SystemLog   /var/log/proftpd/proftpd.log
+TransferLog                     /var/log/proftpd/xferlog
+SystemLog                       /var/log/proftpd/proftpd.log
 
 <IfModule mod_quotatab.c>
     QuotaEngine off
@@ -71,18 +70,15 @@ SystemLog   /var/log/proftpd/proftpd.log
     TLSEngine                     on
     TLSLog                        /var/log/proftpd/tls.log
     TLSProtocol                   SSLv23
-    TLSOptions                    NoCertRequest NoSessionReuseRequired                          
-    TLSRSACertificateFile         /etc/letsencrypt/live/%SERVERNAME%/cert.pem
-    TLSRSACertificateKeyFile      /etc/letsencrypt/live/%SERVERNAME%/privkey.pem
-    TLSCACertificateFile          /etc/letsencrypt/live/%SERVERNAME%/fullchain.pem
+    TLSOptions                    NoSessionReuseRequired
+    TLSRSACertificateFile         "/etc/letsencrypt/live/le4-0-76-80pendleton.pulsedmedia.com/cert.pem"
+    TLSRSACertificateKeyFile      "/etc/letsencrypt/live/le4-0-76-80pendleton.pulsedmedia.com/privkey.pem"
+    TLSCACertificateFile          "/etc/letsencrypt/live/le4-0-76-80pendleton.pulsedmedia.com/fullchain.pem"
     TLSVerifyClient               off
     TLSRequired                   off
 </IfModule>
 
-
 AllowStoreRestart on
 AllowRetrieveRestart on
 
-
 AllowForeignAddress on
-
