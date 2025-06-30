@@ -81,7 +81,7 @@ EOF;
 
 $script2 = <<<EOF
 #!/usr/bin/expect
-spawn rsync -av -e "ssh -o Compression=no -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -l {$args['remoteUser']}"  {$args['remoteUser']}@{$args['hostname']}:{session,www/rutorrent/share,.lighttpd/custom,.local,.lighttpd/custom.d,www/public} /home/{$args['localUser']}/
+spawn rsync -av -e "ssh -o Compression=no -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -l {$args['remoteUser']}"  {$args['remoteUser']}@{$args['hostname']}:/home/{$args['remoteUser']}/{session,www/rutorrent/share,.lighttpd/custom,.local,.lighttpd/custom.d,www/public} /home/{$args['localUser']}/
 expect "s password:"
 send "{$args['remotePassword']}\n";
 interact
