@@ -9,7 +9,7 @@ UseIPv6                         off
   IdentLookups                  off
 </IfModule>
 
-ServerName                      "le4-0-76-80pendleton.pulsedmedia.com"
+ServerName                      "%SERVERNAME%"
 ServerType                      standalone
 DeferWelcome                    off
 MultilineRFC2228                on
