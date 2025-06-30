@@ -66,7 +66,7 @@ EOF;
 
 // We have to create rsync comomands into separate bash script if it has -- in options, this is being parsed by tcl as something otherwise.
 // Esp important is to call #!/bin/bash properly, otherwise -- is parsed
-$rsyncCommand = "#!/bin/bash\nrsync -av -e \"ssh -o Compression=no -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -l {$args['remoteUser']}\" --exclude={.rtorrent.rc,.config/qBittorrent/qBittorrent.conf,.config/deluge/core.conf,.config/deluge/web.conf,.cache,www,session,www/rutorrent/share,.lighttpd,.logs,.local,.lighttpd.conf,.quota,.rtorrentExecuteRun,.trafficData,.trafficDataLocal,rTorrentLog,.bonusQuota,.billingId,.trafficLimit} {$args['remoteUser']}@{$args['hostname']}:. /home/{$args['localUser']}/";
+$rsyncCommand = "#!/bin/bash\nrsync -av -e \"ssh -o Compression=no -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -l {$args['remoteUser']}\" --exclude={.rtorrent.rc,.config/qBittorrent/qBittorrent.conf,.config/deluge/core.conf,.config/deluge/web.conf,.cache,www,session,www/rutorrent/share,.lighttpd,.logs,.local,.lighttpd.conf,.quota,.rtorrentExecuteRun,.trafficData,.trafficDataLocal,rTorrentLog,.bonusQuota,.billingId,.trafficLimit} {$args['remoteUser']}@{$args['hostname']}:/home/{$args['remoteUser']}/ /home/{$args['localUser']}/";
 $rsyncCommandFilename = "rsync-" . sha1( time() . rand(1, 50000000) . serialize($args) );
 
 $script = <<<EOF
