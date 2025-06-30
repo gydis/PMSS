@@ -49,7 +49,8 @@ if (!file_exists('/usr/lib/systemd/user-.slice.d/15-pmss.conf')) {
 #TODO Move these permissions to their own directories later. Git doesn't properly track permission changes so these are important
 passthru('chmod -R 755 /etc/seedbox; chmod -R 750 /scripts');
 
-
+// Update Locale, some servers sometimes have just en_US or something else.
+passthru('locale-gen en_US.UTF-8; update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8');
 
 // Let's create MOTD  #TODO Separate this elsewhere in future
 $motdTemplatePath = '/etc/seedbox/config/template.motd';
