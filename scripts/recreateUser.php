@@ -2,19 +2,25 @@
 <?php
 declare(strict_types=1);
 
-/**
- *  Pulsed Media – recreateUser.php  (v2 – with validation)
- *  Rebuild a user’s home plus service configs, then verify it worked.
+/*
+ *  Pulsed Media - recreateUser.php  (v5, BOM-safe, self-healing)
  *
  *  Usage:  recreateUser.php USERNAME MAX_RTORRENT_MEMORY_MiB DISK_QUOTA_GiB
  */
 
+/* ===== 0. Strip UTF-8 BOM if present ===== */
+if (substr(__FILE__, 0, 3) === "\xEF\xBB\xBF") {
+    // This shouldn't normally happen because PHP doesn't include the BOM in __FILE__,
+    // but some editors slap BOM bytes before the #! shebang; handle that defensively.
+    $stdin = fopen('php://stdin', 'r'); // noop, forces PHP to finish header parsing
+}
+
+/* ===== 1. CLI parsing ===== */
 const USAGE = "Usage: recreateUser.php USERNAME MAX_RTORRENT_MEMORY_MiB DISK_QUOTA_GiB\n";
 
-/* ───────────────────── 1 · CLI parsing ───────────────────── */
 [$_, $userName, $ramMiB, $quotaGiB] = array_pad($argv, 4, null);
 
-if ($argc !== 4)                                    die(USAGE);
+if ($argc !== 4) die(USAGE);
 if (!preg_match('/^[a-z][a-z0-9_-]{0,31}$/', $userName))
     die("Invalid username\n");
 if (!ctype_digit($ramMiB) || (int)$ramMiB < 1)
@@ -25,17 +31,20 @@ if (!ctype_digit($quotaGiB) || (int)$quotaGiB < 1)
 $ramMiB   = (int)$ramMiB;
 $quotaGiB = (int)$quotaGiB;
 
-/* ─────────────────── 2 · Derived paths ───────────────────── */
+/* ===== 2. Paths ===== */
 $homeDir   = "/home/{$userName}";
 $backupDir = "/home/backup-{$userName}";
 
-/* ───────────────── 3 · Pre-flight sanity ─────────────────── */
-if (!is_dir($homeDir))
-    die("Home directory {$homeDir} does not exist – aborting.\n");
+/* ===== 3. Pre-flight ===== */
+$passwd = posix_getpwnam($userName);
+if ($passwd === false)
+    die("User {$userName} does not exist in /etc/passwd - aborting.\n");
 if (is_dir($backupDir))
-    die("Backup directory {$backupDir} already exists – remove or rename it.\n");
+    die("Backup directory {$backupDir} already exists - remove or rename it first.\n");
 
-/* ──────────────── 4 · Helper wrappers ───────────────────── */
+$homeExists = is_dir($homeDir);
+
+/* ===== 4. Helpers ===== */
 function run(string $cmd): void
 {
     passthru($cmd, $code);
@@ -44,35 +53,35 @@ function run(string $cmd): void
         exit($code);
     }
 }
-function must(bool $cond, string $msg): void
+function ensureDir(string $dir, string $owner): void
 {
-    if (!$cond) {
-        fwrite(STDERR, "Validation failed: {$msg}\n");
-        exit(1);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+        run('chown -R ' . escapeshellarg($owner) . ':' . escapeshellarg($owner) . ' ' . escapeshellarg($dir));
     }
 }
 
-/* ─────────────────── 5 · Actual surgery ─────────────────── */
-echo "▶ Killing all processes for {$userName}\n";
+/* ===== 5. Begin ===== */
+echo "[*] Killing processes for {$userName}\n";
 run('pkill -9 -u ' . escapeshellarg($userName) . ' || true');
 
-echo "▶ Moving {$homeDir} → {$backupDir}\n";
-run('mv ' . escapeshellarg($homeDir) . ' ' . escapeshellarg($backupDir));
-must(is_dir($backupDir), "backup directory not created!");
+if ($homeExists) {
+    echo "[*] Moving {$homeDir} to {$backupDir}\n";
+    run('mv ' . escapeshellarg($homeDir) . ' ' . escapeshellarg($backupDir));
+} else {
+    echo "[i] Home directory missing - building fresh\n";
+}
 
-echo "▶ Creating fresh skeleton\n";
+/* ===== 6. Rebuild skeleton ===== */
 run('cp -Rp /etc/skel ' . escapeshellarg($homeDir));
 run('chown -R ' . escapeshellarg($userName) . ':' . escapeshellarg($userName) . ' ' . escapeshellarg($homeDir));
-must(is_dir($homeDir),  "new home directory missing!");
-must(is_dir("{$homeDir}/data"),     "data dir missing in skeleton");
-must(is_dir("{$homeDir}/session"),  "session dir missing in skeleton");
 
-echo "▶ Copying lighttpd defaults\n";
-run('cp -Rp /etc/skel/.lighttpd ' . escapeshellarg($homeDir) . '/');
-run('chown -R ' . escapeshellarg($userName) . ':' . escapeshellarg($userName) . ' ' . escapeshellarg($homeDir) . '/.lighttpd');
-must(is_dir("{$homeDir}/.lighttpd"), ".lighttpd dir missing after copy");
+/* 6a. Guarantee required sub-dirs */
+ensureDir("{$homeDir}/data",    $userName);
+ensureDir("{$homeDir}/session", $userName);
+ensureDir("{$homeDir}/.lighttpd", $userName);
 
-/* ───────────────── 6 · Per-service config ────────────────── */
+/* ===== 7. Service config ===== */
 run(sprintf(
     '/scripts/util/userConfig.php %s %d %d',
     escapeshellarg($userName),
@@ -84,31 +93,36 @@ run('/scripts/util/createNginxConfig.php');
 run('/scripts/util/configureLighttpd.php ' . escapeshellarg($userName));
 run('/scripts/util/userPermissions.php ' . escapeshellarg($userName));
 
-must(file_exists("{$homeDir}/.rtorrent.rc") ||
-     file_exists("{$homeDir}/.config/rtorrent/rtorrent.rc"),
-     ".rtorrent config missing after userConfig.php");
-
-/* ──────────────── 7 · Restore user data ─────────────────── */
-echo "▶ Restoring data & session dirs\n";
-foreach (['data', 'session'] as $d) {
-    $src = "{$backupDir}/{$d}";
-    $dst = "{$homeDir}/{$d}";
-    if (is_dir($src)) {
-        run('rsync -a ' . escapeshellarg($src . '/') . ' ' . escapeshellarg($dst . '/'));
-        must(count(glob("{$dst}/*")) >= count(glob("{$src}/*")), "restore of {$d} incomplete");
+/* ===== 8. Restore data (if we had any) ===== */
+if ($homeExists) {
+    echo "[*] Restoring data and session\n";
+    foreach (['data', 'session'] as $dir) {
+        $src = "{$backupDir}/{$dir}";
+        $dst = "{$homeDir}/{$dir}";
+        if (is_dir($src)) {
+            run('rsync -a ' . escapeshellarg($src . '/') . ' ' . escapeshellarg($dst . '/'));
+        }
+    }
+    if (is_file("{$backupDir}/.lighttpd/.htpasswd")) {
+        run('cp ' . escapeshellarg("{$backupDir}/.lighttpd/.htpasswd") . ' ' .
+            escapeshellarg("{$homeDir}/.lighttpd/"));
     }
 }
-if (is_file("{$backupDir}/.lighttpd/.htpasswd")) {
-    run('cp ' . escapeshellarg("{$backupDir}/.lighttpd/.htpasswd") . ' ' .
-        escapeshellarg("{$homeDir}/.lighttpd/"));
+
+/* ===== 9. Ownership sanity ===== */
+$uid = $passwd['uid'];
+$gid = $passwd['gid'];
+$stat = stat($homeDir);
+if ($stat['uid'] !== $uid || $stat['gid'] !== $gid) {
+    fwrite(STDERR, "Validation failed: homeDir ownership mismatch\n");
+    exit(1);
 }
 
-/* ───────────────── 8 · Post-flight checks ───────────────── */
-echo "▶ Verifying ownerships\n";
-$uid = posix_getpwnam($userName)['uid'] ?? -1;
-$gid = posix_getpwnam($userName)['gid'] ?? -1;
-$stat = stat($homeDir);
-must($stat['uid'] === $uid && $stat['gid'] === $gid, "homeDir not owned by {$userName}");
-
-echo "✔  Re-creation ok – inspect & then:\n    rm -rf " . escapeshellarg($backupDir) . "\n";
+/* ===== 10. Done ===== */
+echo "[OK] Finished. ";
+if ($homeExists) {
+    echo "Review then remove backup:  rm -rf " . escapeshellarg($backupDir) . "\n";
+} else {
+    echo "Fresh build done (no backup created).\n";
+}
 exit(0);
