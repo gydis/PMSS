@@ -45,7 +45,7 @@ passthru("userdel {$username}; groupdel {$username};"); // If during first attem
                                         //Make sure by attempting again FURTHER group needs to be deleted as well
 passthru("rm -rf /var/run/screen/S-{$username}");
 passthru("rm -rf /home/{$username} /etc/nginx/users/{$username}");
-unlink("/etc/seedbox/runtime/ports/lighttpd-{$username}");
+passthru("/scripts/util/portManager.php release {$username} lighttpd");
 unlink("/etc/nginx/users/{$username}");
 
 // If attemps 1 and 2 failed ...
