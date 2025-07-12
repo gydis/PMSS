@@ -1,5 +1,12 @@
 #!/usr/bin/php
 <?php
+/**
+ * checkDelugeInstances.php
+ *
+ * Cron helper that ensures each user with Deluge enabled has both the
+ * daemon and web interface running. When either process is not found,
+ * it is started under the user's account.
+ */
 echo date('Y-m-d H:i:s') . ': Checking Deluge instances' . "\n";
 
 // Get & parse users list
@@ -26,7 +33,7 @@ foreach($users AS $thisUser) {    // Loop users checking their instances
 }
 
 
-function startDeluged($user) {    // this actually calls the function to start rTorrent :)
+function startDeluged($user) {    // start the user's Deluge daemon
     echo "Start deluged for user: {$user}\n";
     passthru("su {$user} -c 'cd ~; deluged -l /home/{$user}/.delugeLog -L info'");
 }
