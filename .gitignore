@@ -37,7 +37,8 @@
 ## start of scripts
 !/scripts/
 !/scripts/*
-!/scripts/lib/**
+!/scripts/**
+
 ## end of scripts
 
 # start of var

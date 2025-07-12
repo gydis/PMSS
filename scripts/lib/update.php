@@ -199,3 +199,81 @@ function getPmssVersion($versionFile = '/etc/seedbox/config/version') {
     }
     return 'unknown';
 }
+
+// ----- Utility helpers -----
+const PMSS_LOG_FILE = '/var/log/pmss-update.log';
+
+/** Log a message to the common update log and stdout */
+function logMessage(string $m): void {
+    $ts = date('[Y-m-d H:i:s] ');
+    @file_put_contents(PMSS_LOG_FILE, $ts.$m.PHP_EOL, FILE_APPEND|LOCK_EX);
+    echo $m.PHP_EOL;
+}
+
+/** Execute a shell command with optional verbose logging */
+function runCommand(string $cmd, bool $verbose = false): int {
+    if ($verbose) logMessage("[CMD] $cmd");
+    passthru($cmd, $rc);
+    return $rc;
+}
+
+/** Ensure the current process has root privileges */
+function requireRoot(): void {
+    if (function_exists('posix_geteuid') && posix_geteuid() !== 0) {
+        fwrite(STDERR, "This script must be run as root.\n");
+        exit(1);
+    }
+}
+
+/** Generate /etc/motd using the template and system details */
+function generateMotd(): void {
+    $motdTemplatePath = '/etc/seedbox/config/template.motd';
+    $motdOutputPath   = '/etc/motd';
+    $motdTemplate     = @file_get_contents($motdTemplatePath);
+    if ($motdTemplate === false) return;
+
+    $serverHostname = trim(file_get_contents('/etc/hostname'));
+    $serverIp       = gethostbyname($serverHostname);
+    $cpuInfo        = trim(shell_exec("lscpu | grep 'Model name:' | sed 's/Model name:\\s*//'"));
+    $ramInfo        = trim(shell_exec("free -h | awk '/^Mem:/ { print \$2 }'"));
+    $storageInfo    = trim(shell_exec("df -h /home | awk 'NR==2 {print \$2}'"));
+
+    $pmssVersion = getPmssVersion();
+    if (!is_dir('/var/run/pmss')) {
+        mkdir('/var/run/pmss', 0770, true);
+    }
+    $versionCache = '/var/run/pmss/version';
+    file_put_contents($versionCache, $pmssVersion);
+    $runtimeVersion = trim(@file_get_contents($versionCache));
+    $updateDate = file_exists('/var/run/pmss/updated') ? trim(file_get_contents('/var/run/pmss/updated')) : 'not set';
+    $aptStampFile = '/var/lib/apt/periodic/update-success-stamp';
+    $aptLastUpdate = file_exists($aptStampFile) ? trim(shell_exec("stat -c '%y' ".escapeshellarg($aptStampFile))) : 'Not available';
+    $uptime = trim(shell_exec('uptime -p'));
+    $kernelVersion = trim(shell_exec('uname -r'));
+    $netSpeedRaw = shell_exec("ethtool eth0 2>/dev/null | grep 'Speed:'");
+    if ($netSpeedRaw && preg_match('/Speed:\s+(\S+)/', $netSpeedRaw, $m)) {
+        $networkSpeed = $m[1];
+    } else {
+        $networkSpeed = 'N/A';
+    }
+
+    $replacements = [
+        '%HOSTNAME%'        => $serverHostname,
+        '%SERVER_IP%'       => $serverIp,
+        '%SERVER_CPU%'      => $cpuInfo,
+        '%SERVER_RAM%'      => $ramInfo,
+        '%SERVER_STORAGE%'  => $storageInfo,
+        '%PMSS_VERSION%'    => $pmssVersion,
+        '%RUN_VERSION%'     => $runtimeVersion,
+        '%UPDATE_DATE%'     => $updateDate,
+        '%APT_LAST_UPDATE%' => $aptLastUpdate,
+        '%UPTIME%'          => $uptime,
+        '%KERNEL_VERSION%'  => $kernelVersion,
+        '%NETWORK_SPEED%'   => $networkSpeed,
+    ];
+
+    foreach ($replacements as $p => $v) {
+        $motdTemplate = str_replace($p, $v, $motdTemplate);
+    }
+    file_put_contents($motdOutputPath, $motdTemplate);
+}

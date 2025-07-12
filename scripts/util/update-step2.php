@@ -14,6 +14,9 @@
 // Include required libraries
 require_once '/scripts/lib/update.php';
 
+requireRoot();
+
+
 // logmsg is defined in /scripts/update.php when this file is loaded from there.
 // Provide a very small fallback so running this script standalone won't fatal.
 if (!function_exists('logmsg')) {
@@ -53,6 +56,7 @@ if (strpos($updateSource, 'soft.sh') !== false) {
 
 
 
+
 // --- Basic system preparation ---
 // Ensure cgroups are configured before doing anything heavy. Some older
 // nodes come with broken defaults which can prevent spawning new processes.
@@ -83,104 +87,17 @@ passthru('chmod -R 755 /etc/seedbox; chmod -R 750 /scripts');
 // Update Locale, some servers sometimes have just en_US or something else.
 passthru('locale-gen en_US.UTF-8; update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8');
 
-// Let's create MOTD  #TODO Separate this elsewhere in future
-$motdTemplatePath = '/etc/seedbox/config/template.motd';
-$motdOutputPath = '/etc/motd';
-$motdTemplate = file_get_contents($motdTemplatePath);
+// Generate MOTD using library helper
+generateMotd();
 
-// Retrieve basic server details.
-$serverHostname = trim(file_get_contents('/etc/hostname'));
-$serverIp       = gethostbyname($serverHostname);
-$cpuInfo        = trim(shell_exec("lscpu | grep 'Model name:' | sed 's/Model name:\\s*//'"));
-$ramInfo        = trim(shell_exec("free -h | awk '/^Mem:/ { print \$2 }'"));
-$storageInfo    = trim(shell_exec("df -h /home | awk 'NR==2 {print \$2}'"));
-
-
-// Retrieve PMSS version from the configured version file.  Helper located in
-// lib/update.php keeps this logic in one place.
-$pmssVersion = getPmssVersion();
-
-// Ensure runtime directory exists before writing version information
-if (!is_dir('/var/run/pmss')) {
-    mkdir('/var/run/pmss', 0770, true);
-}
-
-$versionCache = '/var/run/pmss/version';
-// Persist the version to /var/run for other tools/scripts to consume
-file_put_contents($versionCache, $pmssVersion);
-
-// Fetch stored runtime version for MOTD if available
-$runtimeVersion = trim(file_get_contents($versionCache));
-
-// Retrieve the update date from /var/run/pmss/updated.
-$updateDate = file_exists('/var/run/pmss/updated')
-              ? trim(file_get_contents('/var/run/pmss/updated'))
-              : "not set";
-
-// Retrieve the last apt update/upgrade timestamp, if available.
-$aptStampFile = '/var/lib/apt/periodic/update-success-stamp';
-if (file_exists($aptStampFile)) {
-    $aptLastUpdate = trim(shell_exec("stat -c '%y' " . escapeshellarg($aptStampFile)));
-} else {
-    $aptLastUpdate = "Not available";
-}
-
-// Retrieve system uptime.
-$uptime = trim(shell_exec("uptime -p")); // e.g., "up 3 days, 4 hours"
-
-// Retrieve kernel version.
-$kernelVersion = trim(shell_exec("uname -r"));
-
-// Retrieve network speed from eth0 via ethtool.
-$netSpeedRaw = shell_exec("ethtool eth0 2>/dev/null | grep 'Speed:'");
-if ($netSpeedRaw && preg_match('/Speed:\s+(\S+)/', $netSpeedRaw, $matches)) {
-    $networkSpeed = $matches[1];
-} else {
-    $networkSpeed = "N/A";
-}
-
-// Perform replacements in the template.
-$replacements = [
-    '%HOSTNAME%'         => $serverHostname,
-    '%SERVER_IP%'        => $serverIp,
-    '%SERVER_CPU%'       => $cpuInfo,
-    '%SERVER_RAM%'       => $ramInfo,
-    '%SERVER_STORAGE%'   => $storageInfo,
-    '%PMSS_VERSION%'     => $pmssVersion,
-    '%RUN_VERSION%'      => $runtimeVersion,
-    '%UPDATE_DATE%'      => $updateDate,
-    '%APT_LAST_UPDATE%'  => $aptLastUpdate,
-    '%UPTIME%'           => $uptime,
-    '%KERNEL_VERSION%'   => $kernelVersion,
-    '%NETWORK_SPEED%'    => $networkSpeed,
-];
-
-// Replace each placeholder in the template.
-foreach ($replacements as $placeholder => $value) {
-    $motdTemplate = str_replace($placeholder, $value, $motdTemplate);
-}
-
-if (file_put_contents($motdOutputPath, $motdTemplate) === false) {
-    echo "\n\n\t**** Error: Could not write MOTD to {$motdOutputPath} ****\n\n";
-}
-
-// If var run does not exist, create it. Deb8 likes to remove this if empty?
-// Ensure /var/run/pmss exists as some systems clean it on boot.
-if (!file_exists('/var/run/pmss')) {
-        mkdir('/var/run/pmss', 0770);
-}
-
-// Mark update date
-// Record when this update was executed
-file_put_contents('/var/run/pmss/updated', date('Y-m-d'));
 
 
 $jessieRepos = <<<EOF
-deb http://ftp.funet.fi/debian/ jessie main non-free
-deb-src http://ftp.funet.fi/debian/ jessie main non-free
+deb http://archive.debian.org/debian/ jessie main non-free
+deb-src http://archive.debian.org/debian/ jessie main non-free
 
-deb http://security.debian.org/ jessie/updates main non-free
-deb-src http://security.debian.org/ jessie/updates main non-free
+deb http://archive.debian.org/debian-security/ jessie/updates main non-free
+deb-src http://archive.debian.org/debian-security/ jessie/updates main non-free
 
 #Sabnzbd repo for jessie is same as wheezy (Ubuntu precise)
 deb http://ppa.launchpad.net/jcfp/ppa/ubuntu precise main
@@ -357,26 +274,12 @@ passthru('chmod 751 /home; chmod 740 /home/*');
 `sed -i 's/LANG=en_US\n/LANG=en_US.UTF-8/g' /etc/default/locale`;
 
 
-
-
-#TODO glob and foreach include?
-#TODO YES YES and YES
-include_once '/scripts/lib/apps/vnstat.php';	// Vnstat installer + configuration
-include_once '/scripts/lib/apps/pyload.php';	// pyload installer
-include_once '/scripts/lib/apps/mono.php';		// Mono installer
-include_once '/scripts/lib/apps/sonarr.php';	// Sonarr installer
-include_once '/scripts/lib/apps/radarr.php';
-include_once '/scripts/lib/apps/btsync.php';	// Btsync & Resilio sync installer
-include_once '/scripts/lib/apps/syncthing.php'; // Syncthing installer
-include_once '/scripts/lib/apps/openvpn.php';   // OpenVPN installer & configurator
-include_once '/scripts/lib/apps/rclone.php';	// Rclone updater & installer
-include_once '/scripts/lib/apps/python.php';	// Python/PIP etc. related stuff
-include_once '/scripts/lib/apps/rtorrent.php';
-include_once '/scripts/lib/apps/iprange.php';
-include_once '/scripts/lib/apps/firehol.php';
-include_once '/scripts/lib/apps/filebot.php';
-include_once '/scripts/lib/apps/deluge.php';
-include_once '/scripts/lib/apps/watchdog.php';
+// Load application installers automatically (sorted for deterministic order)
+$apps = glob('/scripts/lib/apps/*.php');
+sort($apps);
+foreach ($apps as $app) {
+    include_once $app;
+}
 
 
 passthru('/scripts/util/setupLetsEncrypt.php noreplies@pulsedmedia.com');
@@ -763,15 +666,9 @@ return array(
 EOF;
 
     file_put_contents($networkConfigFile, $networkConfig);
-    // First time run on a fresh install will create this file
     logmsg('Created default network configuration');
 
-    // Allow administrator to review/edit the generated file
-    passthru('vim /etc/seedbox/config/network');
-
 }
-
-// Configure and start network monitoring tools
 `/scripts/util/setupNetwork.php`;
 
 // Temporary security hardening until dedicated script exists
