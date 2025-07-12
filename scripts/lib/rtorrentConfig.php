@@ -110,7 +110,7 @@ class rtorrentConfig {
 	public function idempotentConfig($user, $config) {
 		$file = '/home/' . $user . '/.rtorrent.rc';
 		#TODO Check mtime + permissions first. if root and no "other" write permission + mtime exceeds 2-3 months, we can be 99.9% certain it's right
-		$data = file_get_contets( $file );
+                $data = file_get_contents( $file );
 		
 		if ($data !== $config) return $this->writeConfig($user, $config);
 	}
