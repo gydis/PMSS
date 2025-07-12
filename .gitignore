@@ -26,6 +26,8 @@
 # /etc/skel
 !/etc/skel/
 !/etc/skel/*
+!/etc/skel/bin/
+!/etc/skel/bin/**
 !/etc/skel/www/*
 !/etc/skel/www/*/**
 /etc/skel/www/openvpn-config.tgz

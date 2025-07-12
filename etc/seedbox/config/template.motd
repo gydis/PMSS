@@ -29,5 +29,7 @@ LinuxServer.io setup: https://pulsedmedia.com/clients/announcements.php?id=596
 Docker rootless is installed by default for all accounts.
 List Containts Running; `docker ps`
 Restart Docker: `systemctl --user restart docker`
+For usage tips run `docker-help`. The daemon is monitored by a cron job to
+ensure it stays running.
 
 

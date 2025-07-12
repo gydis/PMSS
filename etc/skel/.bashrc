@@ -110,6 +110,42 @@ fi
 alias arrinfo='echo "RADARR-URL = https://$(hostname)/public-$(whoami)/radarr/" && echo "SONARR-URL = https://$(hostname)/public-$(whoami)/sonarr/" && echo "PROWLARR-URL = https://$(hostname)/public-$(whoami)/prowlarr/" && echo "JELLYFIN-URL = https://$(hostname)/public-$(whoami)/jellyfin/web/index.html" && echo ""'
 alias passwordChange='newPassword=$(< /dev/urandom tr -dc A-NP-Za-km-np-z2-9 | head -c${1:-10};echo;); echo -e "$newPassword\n$newPassword" | passwd $(whoami); htpasswd -b -m $( [ -f ~/.lighttpd/.htpasswd ] || echo -n "-c" ) ~/.lighttpd/.htpasswd $(whoami) $newPassword; echo "New password is: $newPassword"'
 
+# Display rootless Docker usage instructions
+docker-help() {
+  cat <<'EOF'
+Rootless Docker Usage
+=====================
+
+Docker runs in user mode on this system. Useful commands:
+
+    systemctl --user start docker.service   # start daemon
+    systemctl --user restart docker.service # restart daemon
+    docker ps                               # list running containers
+    docker images                           # list downloaded images
+    docker pull IMAGE                       # fetch image
+    docker run IMAGE                        # run container
+
+The environment variable `DOCKER_HOST` points at your user daemon:
+
+    export DOCKER_HOST=unix:///run/user/\$(id -u)/docker.sock
+
+If you require docker-compose, download the latest binary to ~/bin
+and make it executable.
+
+See https://docs.docker.com/engine/security/rootless/ for limitations.
+
+Wireguard container
+-------------------
+Install the linuxserver.io Wireguard container with:
+
+    install-wireguard.sh [PORT]
+
+The script lives in ~/bin and defaults to a random free port if you do not
+specify one. After launch, fetch client configs with
+`docker container exec wireguard /app/show-peer 1`.
+EOF
+}
+
 
 export PATH=~/bin:$PATH
 
