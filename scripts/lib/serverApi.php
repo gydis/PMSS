@@ -144,10 +144,10 @@ class remoteServerApi {
         ****/
         
         $commandMap = array(
-            'addUser' => array('execute' => '/scripts/addUser.php', 'params' => array('username', 'password', 'memory', 'ram') ),
+            'addUser'       => array('execute' => '/scripts/addUser.php',       'params' => array('username', 'password', 'memory', 'quota') ),
             'terminateUser' => array('execute' => '/scripts/terminateUser.php', 'params' => array('username', 'batch' => '--batch') ),
-            'setupNetwork' => array('execute' => '/scripts/util/setupNetwork.php', 'params' => array()),
-            'recreateUser' => array('execute' => '/scripts/recreateUser.php', 'params' => array('username', 'memory', 'ram') )
+            'setupNetwork'  => array('execute' => '/scripts/util/setupNetwork.php', 'params' => array()),
+            'recreateUser'  => array('execute' => '/scripts/recreateUser.php',  'params' => array('username', 'memory', 'quota') )
         );
         
         if (!isset( $commandMap[ $command ] ) ) {
@@ -159,14 +159,14 @@ class remoteServerApi {
         $useParams = array();
         foreach($requiredParams AS $thisParam => $thisValue) {
             if (!empty($thisValue)) {
-                $useParams[ $thisValue ];
+                $useParams[] = $thisValue;
                 continue;   // "Forced" value, always present at this spot
             }
             if (!$parameters[ $thisParam ]) {
-                $this->_lob('calls', "Job: {$callId} failed due to missing parameter {$thisParam}");
+                $this->_log('calls', "Job: {$callId} failed due to missing parameter {$thisParam}");
                 return false;
             }
-            $useParams[ $parameters[ $thisParam ] ];    // Add parameter to be used
+            $useParams[] = $parameters[ $thisParam ];    // Add parameter to be used
         }
         
         $commandExecute = $commandMap[ $command ]['execute'] . implode(' ', $useParams);

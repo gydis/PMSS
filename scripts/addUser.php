@@ -13,14 +13,14 @@ $user = array(
     'quota'     => $argv[4]    
 );
 if (isset($argv[5])) $user['trafficLimit'] = (int) $argv[5];
-if ($user['password'] == 'rand') $user['password'] == '';
+if ($user['password'] == 'rand') $user['password'] = '';
     
 require_once 'lib/rtorrentConfig.php';
 require_once 'lib/users.php';
 $userDb = new users();
 
 // Get our server hostname, and do some cleanup just to be safe
-$hostname = trim( file_get_contents('/etc/hostname') );;
+$hostname = trim( file_get_contents('/etc/hostname') );
 $hostname = str_replace(array("\n", "\r", "\t"), array('','',''), $hostname);
 
 
