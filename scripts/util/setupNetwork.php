@@ -6,11 +6,16 @@ $users = explode("\n", $users);
 
 $networkConfig = include '/etc/seedbox/config/network';
 
-$localnets = false;
+$localnets = ['185.148.0.0/22'];
+// Define LAN ranges that bypass traffic accounting.
+// Administrators may list multiple networks in /etc/seedbox/config/localnet.
 if (file_exists('/etc/seedbox/config/localnet')) {
-    $localnets = trim( file_get_contents('/etc/seedbox/config/localnet') );
-    $localnets = explode("\n", $localnets);
-
+    $cfg = trim(file_get_contents('/etc/seedbox/config/localnet'));
+    if ($cfg !== '') {
+        $localnets = preg_split('/\r?\n/', $cfg);
+    }
+} else {
+    file_put_contents('/etc/seedbox/config/localnet', "185.148.0.0/22\n");
 }
 
 
