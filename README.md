@@ -33,13 +33,13 @@ wget -qO /scripts/update.php https://raw.githubusercontent.com/MagnaCapax/PMSS/m
 ```
 with reboot using git/main ("testing") as the source instead of release:
 ```
-wget -qO /scripts/update.php https://raw.githubusercontent.com/MagnaCapax/PMSS/main/scripts/update.php;  /scripts/update.php git/main:2025-02-19; reboot
+wget -qO /scripts/update.php https://raw.githubusercontent.com/MagnaCapax/PMSS/main/scripts/update.php;  /scripts/update.php git/main:2025-05-11; reboot
 ```
 
 ### Debian 10 to Debian 11 Upgrade
 
 Dist-upgrade functions.
-YOLO Mostly Uattended command for the base system update:
+YOLO Mostly Unattended command for the base system update:
 ```
 export DEBIAN_FRONTEND=noninteractive; \
 sed -i 's/\<buster\>/bullseye/g' /etc/apt/sources.list; \
@@ -86,4 +86,9 @@ Some important guidelines:
 
  ### Rewards
 
- Best contributions may get rewards when implemented and tested, in the form of Pulsed Media service credit.
+Best contributions may get rewards when implemented and tested, in the form of Pulsed Media service credit.
+
+## License
+
+This project is distributed under the terms of the [GNU General Public License v3](LICENSE).
+Use at your own risk. There are no guarantees or warranties.
