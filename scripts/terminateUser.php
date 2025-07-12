@@ -36,6 +36,36 @@ sleep(3);   // Allow time for rTorrent to die
 
 passthru("killall -9 -u {$username}");  // Sometimes things just don't dieee!
 
+// Clean up reserved rTorrent ports before removing the home directory
+$portFile = "/home/{$username}/.rtorrent.rc";
+$ports = [];
+if (file_exists($portFile)) {
+    $configLines = file($portFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($configLines as $line) {
+        $line = trim($line);
+        if ($line === '' || $line[0] == '#') continue;
+        if (preg_match('/^scgi_port\s*=\s*(?:[^:]*:)?(\d+)/i', $line, $m)) {
+            $ports['scgi'] = (int)$m[1];
+        } elseif (preg_match('/dht.*port.*=\s*(\d+)/i', $line, $m)) {
+            $ports['dht'] = (int)$m[1];
+        } elseif (preg_match('/port_range.*=\s*(\d+)/i', $line, $m)) {
+            $ports['listen'] = (int)$m[1];
+        }
+    }
+    $portsBase = '/var/lib/pmss/ports';
+    foreach ($ports as $type => $port) {
+        $filePath = "$portsBase/{$type}/{$port}";
+        if (file_exists($filePath)) {
+            unlink($filePath);
+            $dir = dirname($filePath);
+            if (is_dir($dir) && count(glob($dir . '/*')) === 0) rmdir($dir);
+        }
+    }
+    if (is_dir($portsBase) && count(glob($portsBase . '/*')) === 0) {
+        rmdir($portsBase);
+    }
+}
+
 echo "\nDeleting user, user data and HTTP password:\n";
 passthru("userdel {$username}; cd /home; rm -rf {$username}");
 //passthru("htpasswd -D /etc/lighttpd/.htpasswd {$username}");
