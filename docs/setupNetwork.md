@@ -1,6 +1,8 @@
 # Network Configuration Script
 
 `setupNetwork.php` applies firewall and traffic shaping rules for all seedbox users. It reads settings from `/etc/seedbox/config/network` and optional `/etc/seedbox/config/localnet`.
+If the `localnet` file is missing a default range of `185.148.0.0/22` is
+created so local traffic can be tracked separately.
 
 There are no command line arguments; simply run:
 
