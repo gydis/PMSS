@@ -35,6 +35,13 @@ with reboot using git/main ("testing") as the source instead of release:
 ```
 wget -qO /scripts/update.php https://raw.githubusercontent.com/MagnaCapax/PMSS/main/scripts/update.php;  /scripts/update.php git/main:2025-05-11; reboot
 ```
+The updater will now refresh itself from GitHub at the start of every run, so it
+is usually enough to simply execute `/scripts/update.php` once installed.
+
+To upgrade the underlying Debian release automatically, run the updater with the
+`--updatedistro` flag. This executes `scripts/util/update-distro.php` which
+performs a dist-upgrade (Debian&nbsp;10→11 or 11→12) using the recommended
+commands.
 
 ### Debian 10 to Debian 11 Upgrade
 

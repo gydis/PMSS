@@ -15,6 +15,7 @@
  * Exit codes: 0 OK · 11 parse · 12 download · 13 verify · 14 deploy
  */
 declare(strict_types=1);
+require_once '/scripts/lib/update.php';
 
 /* ───── PHP 7 polyfills ───── */
 if (!function_exists('str_contains')) {
@@ -37,8 +38,7 @@ if (in_array('--help', $argv, true)) {
 
 /* ───── constants ───── */
 const VERSION_FILE = '/etc/seedbox/config/version';
-const LOG_FILE     = '/var/log/pmss-update.log';
-const FALLBACK_LOG = '/tmp/pmss-update.log';
+const LOG_FILE     = PMSS_LOG_FILE;
 
 const DEFAULT_REPO = 'https://github.com/MagnaCapax/PMSS';
 const CURL_UA      = 'PMSS-Updater (+https://pulsedmedia.com)';
@@ -49,29 +49,50 @@ const EXIT_DL     = 12;
 const EXIT_VERIFY = 13;
 const EXIT_DEPLOY = 14;
 
+/* ───── self update ───── */
+function selfUpdate(): void {
+    if (getenv('PMSS_SELFUPDATED') === '1') return;
+    $url = 'https://raw.githubusercontent.com/MagnaCapax/PMSS/main/scripts/update.php';
+    $latest = @file_get_contents($url);
+    if ($latest === false) return;                   // network issue, ignore
+    if (sha1($latest) === sha1_file(__FILE__)) return; // already current
+    file_put_contents(__FILE__, $latest);
+    chmod(__FILE__, 0755);
+    $args = array_map('escapeshellarg', array_slice($GLOBALS['argv'], 1));
+    $cmd = 'PMSS_SELFUPDATED=1 '.escapeshellcmd(PHP_BINARY).' '.__FILE__.' '.implode(' ', $args);
+    passthru($cmd, $rc);
+    exit($rc);
+}
+
+requireRoot();
+selfUpdate();
+
+/* ───── distro helpers ───── */
+function defaultSpec(): string {
+    $ver = (int)getDistroVersion();
+    if ($ver === 10) return 'release';
+    return 'git/main:' . date('Y-m-d');
+}
+
 /* ───── runtime flags ───── */
-$verbose    = in_array('--verbose',   $argv, true);
-$scriptonly = in_array('--scriptonly', $argv, true);
+$verbose     = in_array('--verbose',     $argv, true);
+$scriptonly  = in_array('--scriptonly',  $argv, true);
+$updatedistro = in_array('--updatedistro', $argv, true);
 
 /* ───── logging helpers ───── */
 function logmsg(string $m): void {
-    $ts = date('[Y-m-d H:i:s] ');
-    @file_put_contents(LOG_FILE,     $ts.$m.PHP_EOL, FILE_APPEND|LOCK_EX)
- || @file_put_contents(FALLBACK_LOG, $ts.$m.PHP_EOL, FILE_APPEND|LOCK_EX);
-    fwrite(STDERR, $m.PHP_EOL);
+    logMessage($m);
 }
 function fatal(string $m, int $c): never { logmsg("[FATAL] $m"); exit($c); }
 
 /* ───── shell helpers ───── */
 function sh(string $cmd, bool $v=false): void {
-    if ($v) fwrite(STDERR, "[CMD] $cmd\n");
-    passthru($cmd, $rc);
+    $rc = runCommand($cmd, $v);
     if ($rc !== 0) fatal("cmd failed: $cmd", EXIT_DL);
 }
 function sh_retry(string $cmd, bool $v=false, int $max=RETRIES): void {
     for ($a=1;$a<=$max;$a++) {
-        if ($v) fwrite(STDERR,"[CMD] $cmd (try $a)\n");
-        passthru($cmd, $rc);
+        $rc = runCommand($cmd, $v);
         if ($rc === 0) return;
         if ($a === $max) fatal("retry fail: $cmd", EXIT_DL);
         sleep($a);
@@ -94,9 +115,21 @@ function tagExists(string $t): bool {
 }
 
 /* ───── parse source spec ───── */
-$cli = array_values(array_diff($argv,['--verbose','--scriptonly','--help']));
+$cli = array_values(array_diff($argv,['--verbose','--scriptonly','--help','--updatedistro']));
 array_shift($cli);
-$spec = $cli[0] ?? trim(@file_get_contents(VERSION_FILE) ?: 'release');
+
+// Load saved version or use default
+$spec = $cli[0] ?? '';
+if ($spec === '') {
+    $raw = trim(@file_get_contents(VERSION_FILE) ?: '');
+    if ($raw !== '' && preg_match('/\d{2}:\d{2}$/', $raw)) {
+        $raw = preg_replace('/\s*\d{2}:\d{2}$/', '', $raw); // drop HH:MM
+    }
+    $spec = $raw !== '' ? $raw : '';
+}
+if ($spec === '' || !preg_match('/^(git|release)([\/:])(.*)$/i', $spec)) {
+    $spec = defaultSpec();
+}
 
 if (!preg_match('/^(git|release)([\/:])(.*)$/i', $spec, $m))
     fatal("bad spec '$spec'", EXIT_PARSE);
@@ -167,8 +200,7 @@ foreach (['scripts','etc','var'] as $d)
     if (!is_dir("$tmp/$d")) fatal("missing $d", EXIT_VERIFY);
 
 /* ───── DEPLOY (copy‑only) ───── */
-sh("rm -rf /scripts/*", $verbose);                                   // wipe scripts dir only
-sh("cp -rp ".escapeshellarg("$tmp/scripts")." /", $verbose);         // fresh scripts
+sh("cp -rp ".escapeshellarg("$tmp/scripts/")." /scripts", $verbose);  // copy scripts over safely
 sh("cp -rpu ".escapeshellarg("$tmp/etc")." /", $verbose);            // merge etc (update if newer)
 sh("cp -rp ".escapeshellarg("$tmp/var")." /", $verbose);             // copy var
 sh("chmod -R o-rwx /scripts /root /etc/skel /etc/seedbox", $verbose);
@@ -185,6 +217,10 @@ if (!$scriptonly && file_exists('/scripts/util/update-step2.php') && file_exists
     require '/scripts/util/update-step2.php';
 } else {
     logmsg('Skipped update‑step2');
+}
+
+if (!$scriptonly && $updatedistro && file_exists('/scripts/util/update-distro.php')) {
+    require '/scripts/util/update-distro.php';
 }
 
 logmsg("Update OK → $version");

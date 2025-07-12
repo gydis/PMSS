@@ -37,6 +37,7 @@
 ## start of scripts
 !/scripts/
 !/scripts/*
+!/scripts/util/update-distro.php
 ## end of scripts
 
 # start of var
