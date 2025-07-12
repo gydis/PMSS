@@ -185,3 +185,17 @@ function getDistroVersion() {
     }
     return '';
 }
+
+/**
+ * Retrieve current PMSS version from the configured version file.
+ *
+ * @param string $versionFile Path to the version file.
+ *
+ * @return string The version string or "unknown" if not found.
+ */
+function getPmssVersion($versionFile = '/etc/seedbox/config/version') {
+    if (file_exists($versionFile) && filesize($versionFile) > 0) {
+        return trim(file_get_contents($versionFile));
+    }
+    return 'unknown';
+}

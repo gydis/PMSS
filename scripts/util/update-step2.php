@@ -1,13 +1,14 @@
 #!/usr/bin/php
 <?php
 /**
- * Update Script for PMSS -- Dynamic portion
- * /scripts/util/update-step2.php
+ * PMSS Update Script (dynamic portion)
  *
- * This script performs various system updates including repository configuration,
- * system and per‐user configuration updates, service management, and more.
- * This script is updated before exeuction by /scripts/update.php
+ * Handles the heavy lifting of system updates once the static updater
+ * (/scripts/update.php) refreshes itself. Tasks include repository setup,
+ * service configuration, user environment maintenance and security tweaks.
  *
+ * This file is refreshed from GitHub by /scripts/update.php prior to each run.
+ * Keep local changes minimal or contribute them upstream.
  */
 
 // Include required libraries
@@ -17,7 +18,9 @@ require_once '/scripts/lib/update.php';
 //In essence this makes update.php kinda dynamic too...
 #TODO Remove around 05/2024
 $updateSource = file_get_contents('/scripts/update.php');
-if (strpos($updateSource, 'soft.sh') > 0) {    // Still running old version! Force it to be dynamic this time to overwrite existing.
+// If the source still contains a call to soft.sh it's the old non-dynamic updater.
+// Use the latest updater from GitHub and run it once to update this script.
+if (strpos($updateSource, 'soft.sh') !== false) {
     passthru('wget -qO /scripts/update.php https://raw.githubusercontent.com/MagnaCapax/PMSS/main/scripts/update.php');
     passthru('/scripts/update.php');
     die();   // Avoid infinite loop :)
@@ -25,8 +28,9 @@ if (strpos($updateSource, 'soft.sh') > 0) {    // Still running old version! For
 
 
 
-// Cgroup stuff
-// we have to do this as first thing or we run out of processes due to incorrect config on some nodes ...
+// --- Basic system preparation ---
+// Ensure cgroups are configured before doing anything heavy. Some older
+// nodes come with broken defaults which can prevent spawning new processes.
 $fstab = file_get_contents('/etc/fstab');
 if (strpos($fstab, 'cgroup') === false) {   // Cgroups not installed
     passthru('apt-get install cgroup-bin -y');
@@ -38,15 +42,17 @@ if (strpos($fstab, 'cgroup') === false) {   // Cgroups not installed
 // Increase pids max, there was an issue with this and updates would halt due to pids max being reached. SSH unresponsive etc.
 passthru('echo 100000 > /sys/fs/cgroup/pids/user.slice/user-0.slice/pids.max');
 
-// Systemd default unit
-if (file_exists('/usr/lib/systemd/user-.slice.d/99-pmss.conf')) unlink('/usr/lib/systemd/user-.slice.d/99-pmss.conf');  // Defaults! Should not be the last thing
+// Systemd slice configuration ensures proper process limits for users
+if (file_exists('/usr/lib/systemd/user-.slice.d/99-pmss.conf')) unlink('/usr/lib/systemd/user-.slice.d/99-pmss.conf');  // Remove obsolete defaults
 if (!file_exists('/usr/lib/systemd/user-.slice.d/15-pmss.conf')) {
+    // Install our tuned slice limits and reload systemd
     echo `cp -p /etc/seedbox/config/template.user-slices-pmss.conf /usr/lib/systemd/system/user-.slice.d/15-pmss.conf; chmod 644 /usr/lib/systemd/system/user-.slice.d/15-pmss.conf; systemctl daemon-reload`;
 }
 
 
 
-#TODO Move these permissions to their own directories later. Git doesn't properly track permission changes so these are important
+// Ensure default permissions on config directories. Git does not preserve them
+// reliably so we enforce them each update.
 passthru('chmod -R 755 /etc/seedbox; chmod -R 750 /scripts');
 
 // Update Locale, some servers sometimes have just en_US or something else.
@@ -65,11 +71,21 @@ $ramInfo        = trim(shell_exec("free -h | awk '/^Mem:/ { print \$2 }'"));
 $storageInfo    = trim(shell_exec("df -h /home | awk 'NR==2 {print \$2}'"));
 
 
-// Retrieve PMSS version from version file.
-$versionFile = '/etc/seedbox/config/version';
-$pmssVersion = file_exists($versionFile) && filesize($versionFile) > 0
-               ? trim(file_get_contents($versionFile))
-               : "unknown";
+// Retrieve PMSS version from the configured version file.  Helper located in
+// lib/update.php keeps this logic in one place.
+$pmssVersion = getPmssVersion();
+
+// Ensure runtime directory exists before writing version information
+if (!is_dir('/var/run/pmss')) {
+    mkdir('/var/run/pmss', 0770, true);
+}
+
+$versionCache = '/var/run/pmss/version';
+// Persist the version to /var/run for other tools/scripts to consume
+file_put_contents($versionCache, $pmssVersion);
+
+// Fetch stored runtime version for MOTD if available
+$runtimeVersion = trim(file_get_contents($versionCache));
 
 // Retrieve the update date from /var/run/pmss/updated.
 $updateDate = file_exists('/var/run/pmss/updated')
@@ -106,6 +122,7 @@ $replacements = [
     '%SERVER_RAM%'       => $ramInfo,
     '%SERVER_STORAGE%'   => $storageInfo,
     '%PMSS_VERSION%'     => $pmssVersion,
+    '%RUN_VERSION%'      => $runtimeVersion,
     '%UPDATE_DATE%'      => $updateDate,
     '%APT_LAST_UPDATE%'  => $aptLastUpdate,
     '%UPTIME%'           => $uptime,
@@ -123,11 +140,14 @@ if (file_put_contents($motdOutputPath, $motdTemplate) === false) {
 }
 
 // If var run does not exist, create it. Deb8 likes to remove this if empty?
-if (!file_exists('/var/run/pmss'))
-	mkdir('/var/run/pmss', 0770);
+// Ensure /var/run/pmss exists as some systems clean it on boot.
+if (!file_exists('/var/run/pmss')) {
+        mkdir('/var/run/pmss', 0770);
+}
 
 // Mark update date
-file_put_contents(date('Y-m-d'), '/var/run/pmss/updated');
+// Record when this update was executed
+file_put_contents('/var/run/pmss/updated', date('Y-m-d'));
 
 $wheezyRepos = <<<EOF
 deb http://debian.bhs.mirrors.ovh.net/debian/ wheezy main non-free
@@ -277,6 +297,7 @@ include_once '/scripts/lib/apps/packages.php';
 if ($distroVersion < 10) passthru("/etc/init.d/lighttpd stop; update-rc.d lighttpd stop 2 3 4 5; update-rc.d lighttpd remove; killall -9 lighttpd; killall -9 php-cgi; update-rc.d nginx defaults");
 	else passthru("/etc/init.d/lighttpd stop; systemctl disable lighttpd; killall -9 lighttpd; killall -9 php-cgi; systemctl enable nginx");
 
+// Web server configuration and restart
 passthru("/scripts/util/configureLighttpd.php");
 passthru("/scripts/util/createNginxConfig.php");
 passthru("/scripts/util/checkUserHtpasswd.php");
@@ -343,13 +364,15 @@ foreach ($servicesToCheck AS $thisService) {
 
 
 
-// Install mediainfo
+// Install mediainfo (used by some optional features). The packages are
+// distributed per-distro and require the LSB codename in the filename.
 if (!file_exists('/usr/bin/mediainfo')) {
     $current = getcwd();
     mkdir('/tmp/mediainfo');
     chdir('/tmp/mediainfo');
-    
-	// $mediaVersion is only mentioned here ...
+
+    // Use LSB release codename when building package URLs
+    $mediaVersion = $lsbrelease;
     if (!empty($mediaVersion)) {
         passthru("wget http://pulsedmedia.com/remote/pkg/libzen0_0.4.24-1_amd64.Debian_{$mediaVersion}.deb");
         passthru("wget http://pulsedmedia.com/remote/pkg/libmediainfo0_0.7.53-1_amd64.Debian_{$mediaVersion}.deb");
@@ -357,7 +380,6 @@ if (!file_exists('/usr/bin/mediainfo')) {
         passthru("dpkg -i libzen0_0.4.24-1_amd64.Debian_{$mediaVersion}.deb");
         passthru("dpkg -i libmediainfo0_0.7.53-1_amd64.Debian_{$mediaVersion}.deb");
         passthru("dpkg -i mediainfo_0.7.52-1_amd64.Debian_{$mediaVersion}.deb");
-    
     }
     chdir($current);
 }
@@ -384,7 +406,7 @@ foreach($users AS $thisUser) {
  
     echo "***** Updating user {$thisUser}\n";
 
-    echo "\tConfiguing lighttpd\n";
+    echo "\tConfiguring lighttpd\n";
     passthru("/scripts/util/configureLighttpd.php {$thisUser}");
 	
      #Update PHP.ini
@@ -636,8 +658,9 @@ if (!file_exists('/var/www/testfile') or
 // Disallow atop for regular users
 chmod('/usr/bin/atop', 0750);
 
-// Setup root crons
-`/scripts/util/setupRootCron.php`;
+// Root maintenance cron jobs will be triggered later in this script. A
+// duplicate invocation used to live here, which caused the tasks to run twice.
+// Removing that extra call keeps update output concise.
 
 /* Not using this method currently - afaik no one is
 TODO Remove all references to this from all places.
@@ -656,12 +679,14 @@ passthru("/scripts/util/checkUserHtpasswd.php");
 passthru("/etc/init.d/nginx restart");
 passthru("/scripts/cron/checkLighttpdInstances.php");
 
+// Ensure skeleton permissions and misc configs are up to date
 passthru('/scripts/util/setupSkelPermissions.php');
 passthru('/scripts/util/setupRootCron.php');
 passthru('/scripts/util/ftpConfig.php');
 //passthru('/scripts/util/setupApiKey.php');
 
 
+// Restore the default crontab for all users
 passthru('/scripts/listUsers.php | xargs -r -I\'{1}\' crontab -u {1} /etc/seedbox/config/user.crontab.default');
 
 
@@ -669,6 +694,7 @@ passthru('/scripts/listUsers.php | xargs -r -I\'{1}\' crontab -u {1} /etc/seedbo
 $networkConfigFile = '/etc/seedbox/config/network';
 if (!file_exists($networkConfigFile)) {
 
+    // Initial network configuration template
     $networkConfig = <<<EOF
 <?php
 #Default settings, change these to suit your system. Speeds are in mbits
@@ -689,12 +715,13 @@ EOF;
 
     file_put_contents($networkConfigFile, $networkConfig);
 
+    // Allow administrator to review/edit the generated file
     passthru('vim /etc/seedbox/config/network');
 
 }
 
-// Setup network monitoring etc.
+// Configure and start network monitoring tools
 `/scripts/util/setupNetwork.php`;
 
-// Following should be moved to their own file eventually
+// Temporary security hardening until dedicated script exists
 `chmod o-r /var/log/wtmp /var/run/utmp  /usr/bin/netstat /usr/bin/who /usr/bin/w`;
