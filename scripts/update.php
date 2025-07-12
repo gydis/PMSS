@@ -40,6 +40,10 @@ if (in_array('--help', $argv, true)) {
 const VERSION_FILE = '/etc/seedbox/config/version';
 const LOG_FILE     = PMSS_LOG_FILE;
 
+require_once __DIR__.'/lib/logger.php';
+$logger = new Logger(__FILE__);
+$GLOBALS['logger'] = $logger;
+
 const DEFAULT_REPO = 'https://github.com/MagnaCapax/PMSS';
 const CURL_UA      = 'PMSS-Updater (+https://pulsedmedia.com)';
 const RETRIES      = 3;
@@ -80,10 +84,13 @@ $scriptonly  = in_array('--scriptonly',  $argv, true);
 $updatedistro = in_array('--updatedistro', $argv, true);
 
 /* ───── logging helpers ───── */
+
 function logmsg(string $m): void {
     logMessage($m);
 }
 function fatal(string $m, int $c): never { logmsg("[FATAL] $m"); exit($c); }
+
+
 
 /* ───── shell helpers ───── */
 function sh(string $cmd, bool $v=false): void {
@@ -179,7 +186,7 @@ if ($type === 'release') {
         $repo   = DEFAULT_REPO;
     }
 }
-logmsg("Source → $type repo=$repo branch=$branch date='$date'");
+    $logger->msg("Source → $type repo=$repo branch=$branch date='$date'");
 
 /* ───── download tree ───── */
 $tmp = tmpd();
@@ -216,12 +223,15 @@ sh("rm -rf ".escapeshellarg($tmp), $verbose);
 if (!$scriptonly && file_exists('/scripts/util/update-step2.php') && file_exists('/etc/hostname')) {
     require '/scripts/util/update-step2.php';
 } else {
-    logmsg('Skipped update‑step2');
+    $logger->msg('Skipped update‑step2');
 }
 
-if (!$scriptonly && $updatedistro && file_exists('/scripts/util/update-distro.php')) {
+
+if (!$scriptonly && $updatedistro && file_exists('/scripts/util/update-distro.php')) 
     require '/scripts/util/update-distro.php';
-}
+
 
 logmsg("Update OK → $version");
+
+
 echo "Update OK → $version\n";
