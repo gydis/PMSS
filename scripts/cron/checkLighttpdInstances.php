@@ -78,6 +78,7 @@ function startLighttpd($thisUser) {    // this actually calls the function to st
 
 function restartLighttpd($thisUser) {    // Kill any php-cgi or lighttpd process for user, make sure no double launch
     echo "Killing (if any) lighttpd for user: {$thisUser}\n";
-    shell_exec("killall -15 -u {$thisUser} lighttpd; killall -15 -u {$thisUser} php-cgi; sleep 5; killall -9 -u {$thisUser} lighttpd; killall -9 -u {$thisUser} php-cgi; sleep 0.05;");
+    shell_exec("killall -15 -u {$thisUser} lighttpd; killall -15 -u {$thisUser} php-cgi; sleep 5; killall -9 -u {$thisUser} lighttpd; killall -9 -u {$thisUser} php-cgi;");
+    usleep(50000);   // brief pause before relaunch
     startLighttpd($thisUser);
 }
