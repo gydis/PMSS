@@ -12,7 +12,7 @@
  */
 
 // Include required libraries
-require_once '/scripts/lib/update.php';
+require_once __DIR__.'/../lib/update.php';
 
 requireRoot();
 
@@ -37,6 +37,106 @@ if (!function_exists('logmsg')) {
     }
 }
 
+/**
+ * Wrapper around runCommand that logs intent and keeps failures non-fatal.
+ */
+if (!isset($GLOBALS['PMSS_PROFILE'])) {
+    $GLOBALS['PMSS_PROFILE'] = [];
+}
+
+function pmssRecordProfile(array $entry): void
+{
+    $GLOBALS['PMSS_PROFILE'][] = $entry;
+    pmssLogJson(['event' => 'step', 'data' => $entry]);
+}
+
+function runStep(string $description, string $command): int
+{
+    $dryRun = getenv('PMSS_DRY_RUN') === '1';
+    $started = microtime(true);
+    $rc = 0;
+    if (!$dryRun) {
+        $rc = runCommand($command, false);
+    }
+    $duration = microtime(true) - $started;
+    $status = $dryRun ? 'SKIP' : ($rc === 0 ? 'OK' : 'ERR');
+    $lastOutput = $GLOBALS['PMSS_LAST_COMMAND_OUTPUT'] ?? ['stdout' => '', 'stderr' => ''];
+    $stdout = $dryRun ? '' : ($lastOutput['stdout'] ?? '');
+    $stderr = $dryRun ? '' : ($lastOutput['stderr'] ?? '');
+    $stderrExcerpt = $stderr !== '' ? preg_replace('/\s+/', ' ', trim(substr($stderr, 0, 300))) : '';
+    $stdoutExcerpt = $stdout !== '' ? preg_replace('/\s+/', ' ', trim(substr($stdout, 0, 300))) : '';
+
+    $message = sprintf('[%s %.3fs rc=%d] %s :: %s', $status, $duration, $rc, $description, $command);
+    if ($status === 'ERR' && $stderrExcerpt !== '') {
+        $message .= ' :: '.$stderrExcerpt;
+    }
+    logmsg($message);
+    pmssRecordProfile([
+        'description' => $description,
+        'command'     => $command,
+        'status'      => $status,
+        'rc'          => $rc,
+        'duration'    => round($duration, 4),
+        'dry_run'     => $dryRun,
+        'stdout_excerpt' => $stdoutExcerpt,
+        'stderr_excerpt' => $stderrExcerpt,
+    ]);
+    return $rc;
+}
+
+/**
+ * Convenience helper for user-scoped commands.
+ */
+function runUserStep(string $user, string $description, string $command): int
+{
+    return runStep("[user:$user] $description", $command);
+}
+
+/**
+ * Execute a series of commands under a shared description.
+ */
+function runStepSequence(string $description, array $commands): void
+{
+    logmsg($description);
+    foreach ($commands as $cmd) {
+        runStep($description, $cmd);
+    }
+}
+
+function pmssProfileSummary(): void
+{
+    $profile = $GLOBALS['PMSS_PROFILE'] ?? [];
+    if (empty($profile)) {
+        return;
+    }
+    usort($profile, static function ($a, $b) {
+        return $b['duration'] <=> $a['duration'];
+    });
+    $top = array_slice($profile, 0, 5);
+    $lines = array_map(static function ($entry) {
+        return sprintf('%s (%s %.3fs rc=%d)', $entry['description'], $entry['status'], $entry['duration'], $entry['rc']);
+    }, $top);
+    logmsg('Step duration summary (top 5): '.implode(' | ', $lines));
+    pmssLogJson(['event' => 'profile_summary', 'steps' => $top]);
+
+    $profileOutput = getenv('PMSS_PROFILE_OUTPUT') ?: '';
+    if ($profileOutput === '') {
+        $jsonLogPath = getenv('PMSS_JSON_LOG') ?: '';
+        if ($jsonLogPath !== '') {
+            $profileOutput = $jsonLogPath.'.profile.json';
+        }
+    }
+    if ($profileOutput !== '') {
+        $dir = dirname($profileOutput);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        @file_put_contents($profileOutput, json_encode($profile, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
+}
+
+require_once __DIR__.'/../lib/update/users.php';
+
 // Mark the start of this update step in the log
 logmsg('update-step2.php starting');
 
@@ -47,8 +147,8 @@ $updateSource = file_get_contents('/scripts/update.php');
 // If the source still contains a call to soft.sh it's the old non-dynamic updater.
 // Use the latest updater from GitHub and run it once to update this script.
 if (strpos($updateSource, 'soft.sh') !== false) {
-    passthru('wget -qO /scripts/update.php https://raw.githubusercontent.com/MagnaCapax/PMSS/main/scripts/update.php');
-    passthru('/scripts/update.php');
+    runStep('Fetching latest update.php from GitHub', 'wget -qO /scripts/update.php https://raw.githubusercontent.com/MagnaCapax/PMSS/main/scripts/update.php');
+    runStep('Executing refreshed update.php', '/scripts/update.php');
     die();   // Avoid infinite loop :)
 }
 
@@ -62,195 +162,80 @@ if (strpos($updateSource, 'soft.sh') !== false) {
 // nodes come with broken defaults which can prevent spawning new processes.
 $fstab = file_get_contents('/etc/fstab');
 if (strpos($fstab, 'cgroup') === false) {   // Cgroups not installed
-    passthru('apt-get install cgroup-bin -y');
+    runStep('Ensuring cgroup-bin package present', 'apt-get install -y -q cgroup-bin');
     $mount = "\ncgroup  /sys/fs/cgroup  cgroup  defaults  0   0\n";
     file_put_contents('/etc/fstab', $mount, FILE_APPEND);
-    `mount /sys/fs/cgroup`;
+    runStep('Mounting /sys/fs/cgroup', 'mount /sys/fs/cgroup');
 }
 
 // Increase pids max, there was an issue with this and updates would halt due to pids max being reached. SSH unresponsive etc.
-passthru('echo 100000 > /sys/fs/cgroup/pids/user.slice/user-0.slice/pids.max');
+runStep('Raising PID limit for root user slice', "sh -c 'echo 100000 > /sys/fs/cgroup/pids/user.slice/user-0.slice/pids.max'");
 
 // Systemd slice configuration ensures proper process limits for users
 if (file_exists('/usr/lib/systemd/user-.slice.d/99-pmss.conf')) unlink('/usr/lib/systemd/user-.slice.d/99-pmss.conf');  // Remove obsolete defaults
 if (!file_exists('/usr/lib/systemd/user-.slice.d/15-pmss.conf')) {
     // Install our tuned slice limits and reload systemd
-    echo `cp -p /etc/seedbox/config/template.user-slices-pmss.conf /usr/lib/systemd/system/user-.slice.d/15-pmss.conf; chmod 644 /usr/lib/systemd/system/user-.slice.d/15-pmss.conf; systemctl daemon-reload`;
+    runStep('Installing user slice override template', 'cp -p /etc/seedbox/config/template.user-slices-pmss.conf /usr/lib/systemd/system/user-.slice.d/15-pmss.conf');
+    runStep('Setting permissions on user slice override', 'chmod 644 /usr/lib/systemd/system/user-.slice.d/15-pmss.conf');
+    runStep('Reloading systemd manager configuration', 'systemctl daemon-reload');
 }
 
 
 
 // Ensure default permissions on config directories. Git does not preserve them
 // reliably so we enforce them each update.
-passthru('chmod -R 755 /etc/seedbox; chmod -R 750 /scripts');
+runStep('Resetting /etc/seedbox permissions', 'chmod -R 755 /etc/seedbox');
+runStep('Resetting /scripts permissions', 'chmod -R 750 /scripts');
 
 // Update Locale, some servers sometimes have just en_US or something else.
-passthru('locale-gen en_US.UTF-8; update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8');
+runStep('Generating en_US.UTF-8 locale', 'locale-gen en_US.UTF-8');
+runStep('Setting default system locale', 'update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8');
 
 // Generate MOTD using library helper
 generateMotd();
 
 
 
-$jessieRepos = <<<EOF
-deb http://archive.debian.org/debian/ jessie main non-free
-deb-src http://archive.debian.org/debian/ jessie main non-free
-
-deb http://archive.debian.org/debian-security/ jessie/updates main non-free
-deb-src http://archive.debian.org/debian-security/ jessie/updates main non-free
-
-#Sabnzbd repo for jessie is same as wheezy (Ubuntu precise)
-deb http://ppa.launchpad.net/jcfp/ppa/ubuntu precise main
-
-#Backports - ffmpeg etc.
-deb http://archive.debian.org/debian/ jessie-backports main
-
-EOF;
-
-$busterRepos = <<<EOF
-deb http://www.nic.funet.fi/debian/ buster main non-free contrib
-deb-src http://www.nic.funet.fi/debian/ buster main non-free contrib
-
-deb http://security.debian.org/debian-security buster/updates main non-free contrib
-deb-src http://security.debian.org/debian-security buster/updates main non-free contrib
-
-# buster-updates, previously known as 'volatile'
-deb http://www.nic.funet.fi/debian/ buster-updates main non-free contrib
-deb-src http://www.nic.funet.fi/debian/ buster-updates main non-free contrib
-
-deb http://www.nic.funet.fi/debian/ buster-backports main non-free contrib
-EOF;
-
-$bullseyeRepos = <<<EOF
-deb http://www.nic.funet.fi/debian/ bullseye main non-free contrib
-deb-src http://www.nic.funet.fi/debian/ bullseye main non-free contrib
-
-deb http://security.debian.org/debian-security bullseye-security main non-free contrib
-deb-src http://security.debian.org/debian-security bullseye-security main non-free contrib
-
-# bullseye-updates, previously known as 'volatile'
-deb http://www.nic.funet.fi/debian/ bullseye-updates main non-free contrib
-deb-src http://www.nic.funet.fi/debian/ bullseye-updates main non-free contrib
-
-deb http://www.nic.funet.fi/debian/ bullseye-backports main non-free contrib
-EOF;
-
-$bookwormRepos = <<<EOF
-deb http://www.nic.funet.fi/debian/ bookworm main non-free contrib
-deb-src http://www.nic.funet.fi/debian/ bookworm main non-free contrib
-
-deb http://security.debian.org/debian-security bookworm-security main non-free contrib
-deb-src http://security.debian.org/debian-security bookworm-security main non-free contrib
-
-# buster-updates, previously known as 'volatile'
-deb http://www.nic.funet.fi/debian/ bookworm-updates main non-free contrib
-deb-src http://www.nic.funet.fi/debian/ bookworm-updates main non-free contrib
-
-deb http://www.nic.funet.fi/debian/ bookworm-backports main non-free contrib
-EOF;
-
-
-
-/****  END CONFIG ****/
-
-/**
- * Ensure /etc/apt/sources.list matches the desired repository configuration.
- *
- * The repository definitions are passed in as an associative array keyed by
- * codename.  Only when the SHA1 hash of the current sources.list differs from
- * the desired configuration will the file be replaced and the action logged.
- */
-function updateAptSources(string $distroName, int $distroVersion, string $currentRepos,
-                          array $repos): void {
-    switch ($distroName) {
-        case 'debian':
-            switch ($distroVersion) {
-                case 8:
-                    $hash = sha1($repos['jessie']);
-                    if ($currentRepos !== $hash) {
-                        file_put_contents('/etc/apt/sources.list', $repos['jessie']);
-                        passthru("echo 'Acquire::Check-Valid-Until \"false\";' >/etc/apt/apt.conf.d/90ignore-release-date");
-                        passthru('apt-get clean;');
-                        logmsg('Applied Debian Jessie repository config');
-                    } else {
-                        logmsg('Debian Jessie repositories already correct');
-                    }
-                    break;
-
-                case 10:
-                    echo `apt update -y`;
-                    $hash = sha1($repos['buster']);
-                    if ($currentRepos !== $hash) {
-                        file_put_contents('/etc/apt/sources.list', $repos['buster']);
-                        logmsg('Applied Debian Buster repository config');
-                    } else {
-                        logmsg('Debian Buster repositories already correct');
-                    }
-                    break;
-
-                case 11:
-                    echo `apt update -y`;
-                    $hash = sha1($repos['bullseye']);
-                    if ($currentRepos !== $hash) {
-                        file_put_contents('/etc/apt/sources.list', $repos['bullseye']);
-                        logmsg('Applied Debian Bullseye repository config');
-                    } else {
-                        logmsg('Debian Bullseye repositories already correct');
-                    }
-                    break;
-
-                case 12:
-                    echo `apt update -y`;
-                    $hash = sha1($repos['bookworm']);
-                    if ($currentRepos !== $hash) {
-                        file_put_contents('/etc/apt/sources.list', $repos['bookworm']);
-                        logmsg('Applied Debian Bookworm repository config');
-                    } else {
-                        logmsg('Debian Bookworm repositories already correct');
-                    }
-                    break;
-            }
-            break;
-
-        case 'ubuntu':
-            die("Ubuntu is not supported yet.\n");
-
-        default:
-            die("Unsupported distro.\n");
-    }
-}
-
-
 $currentRepos = sha1(file_get_contents('/etc/apt/sources.list'));
 
-// Compare against the known-good repository definitions and re-write the
-// sources list if it differs.  This keeps package updates consistent across
-// nodes even if admins tweak the file manually.
+// Retrieve repository definitions via shared helpers for reuse across installers.
+$repoTemplates = [
+    'jessie'   => loadRepoTemplate('jessie', 'logmsg'),
+    'buster'   => loadRepoTemplate('buster', 'logmsg'),
+    'bullseye' => loadRepoTemplate('bullseye', 'logmsg'),
+    'bookworm' => loadRepoTemplate('bookworm', 'logmsg'),
+];
+
 updateAptSources(
     $distroName,
     (int)$distroVersion,
     $currentRepos,
-    [
-        'jessie'   => $jessieRepos,
-        'buster'   => $busterRepos,
-        'bullseye' => $bullseyeRepos,
-        'bookworm' => $bookwormRepos,
-    ]
+    $repoTemplates,
+    'logmsg'
 );
+
+runStep('Refreshing apt package index', 'apt update -y');
 
 // Localnet file location fix -- this is very old TODO Remove say 09/2025
 if (file_exists('/etc/seedbox/localnet') && !file_exists('/etc/seedbox/config/localnet')) {
-    `mv /etc/seedbox/localnet /etc/seedbox/config/localnet`;
+    runStep('Migrating legacy localnet configuration', 'mv /etc/seedbox/localnet /etc/seedbox/config/localnet');
 }
 
 //Install latest rc.local file and execute it
-`cp /etc/seedbox/config/template.rc.local /etc/rc.local; chown root.root /etc/rc.local; chmod 750 /etc/rc.local; nohup /etc/rc.local >> /dev/null 2>&1`;
+runStep('Updating rc.local template', 'cp /etc/seedbox/config/template.rc.local /etc/rc.local');
+runStep('Setting rc.local ownership', 'chown root.root /etc/rc.local');
+runStep('Setting rc.local permissions', 'chmod 750 /etc/rc.local');
+runStep('Executing rc.local to apply runtime tweaks', 'nohup /etc/rc.local >> /dev/null 2>&1');
 
 //Install latest systemd/system.conf
-`cp /etc/seedbox/config/template.systemd.system.conf /etc/systemd/system.conf; chmod 644 /etc/systemd/system.conf; /usr/bin/systemctl daemon-reexec`;
+runStep('Installing systemd system.conf template', 'cp /etc/seedbox/config/template.systemd.system.conf /etc/systemd/system.conf');
+runStep('Setting permissions on systemd system.conf', 'chmod 644 /etc/systemd/system.conf');
+runStep('Reexecuting systemd to pick up configuration', '/usr/bin/systemctl daemon-reexec');
 
 //Install latest sshd_config
-`cp /etc/seedbox/config/template.sshd_config /etc/ssh/sshd_config; chmod 644 /etc/ssh/sshd_config;  /usr/bin/systemctl restart sshd`;
+runStep('Installing sshd configuration template', 'cp /etc/seedbox/config/template.sshd_config /etc/ssh/sshd_config');
+runStep('Setting sshd_config permissions', 'chmod 644 /etc/ssh/sshd_config');
+runStep('Restarting sshd to load updated configuration', '/usr/bin/systemctl restart sshd');
 
 
 
@@ -258,20 +243,34 @@ if (file_exists('/etc/seedbox/localnet') && !file_exists('/etc/seedbox/config/lo
 include_once '/scripts/lib/apps/packages.php';
 
 
-if ($distroVersion < 10) passthru("/etc/init.d/lighttpd stop; update-rc.d lighttpd stop 2 3 4 5; update-rc.d lighttpd remove; killall -9 lighttpd; killall -9 php-cgi; update-rc.d nginx defaults");
-	else passthru("/etc/init.d/lighttpd stop; systemctl disable lighttpd; killall -9 lighttpd; killall -9 php-cgi; systemctl enable nginx");
+if ($distroVersion < 10) {
+    runStep('Stopping lighttpd (init.d)', '/etc/init.d/lighttpd stop');
+    runStep('Disabling lighttpd from sysvinit runlevels', 'update-rc.d lighttpd stop 2 3 4 5');
+    runStep('Removing lighttpd sysvinit hooks', 'update-rc.d lighttpd remove');
+    runStep('Terminating lingering lighttpd processes', 'killall -9 lighttpd');
+    runStep('Terminating lingering php-cgi processes', 'killall -9 php-cgi');
+    runStep('Ensuring nginx defaults set in sysvinit', 'update-rc.d nginx defaults');
+} else {
+    runStep('Stopping lighttpd (systemd)', '/etc/init.d/lighttpd stop');
+    runStep('Disabling lighttpd systemd service', 'systemctl disable lighttpd');
+    runStep('Terminating lingering lighttpd processes', 'killall -9 lighttpd');
+    runStep('Terminating lingering php-cgi processes', 'killall -9 php-cgi');
+    runStep('Enabling nginx systemd service', 'systemctl enable nginx');
+}
 
 // Web server configuration and restart
-passthru("/scripts/util/configureLighttpd.php");
-passthru("/scripts/util/createNginxConfig.php");
-passthru("/scripts/util/checkUserHtpasswd.php");
-passthru("/etc/init.d/nginx restart");
-passthru("/scripts/cron/checkLighttpdInstances.php");
-passthru('chmod 751 /home; chmod 740 /home/*');
+runStep('Refreshing lighttpd configuration', '/scripts/util/configureLighttpd.php');
+runStep('Regenerating nginx configuration', '/scripts/util/createNginxConfig.php');
+runStep('Verifying user HTTP authentication files', '/scripts/util/checkUserHtpasswd.php');
+runStep('Restarting nginx service', '/etc/init.d/nginx restart');
+runStep('Checking lighttpd per-user instances', '/scripts/cron/checkLighttpdInstances.php');
+runStep('Setting /home directory permissions', 'chmod 751 /home');
+runStep('Setting user home directory permissions', 'chmod 740 /home/*');
 
 // Set locales
-`sed -i 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/g' /etc/locale.gen; locale-gen`;
-`sed -i 's/LANG=en_US\n/LANG=en_US.UTF-8/g' /etc/default/locale`;
+runStep('Ensuring en_US.UTF-8 locale is enabled', "sed -i 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/g' /etc/locale.gen");
+runStep('Regenerating locales', 'locale-gen');
+runStep('Setting default LANG in /etc/default/locale', "sed -i 's/LANG=en_US\\n/LANG=en_US.UTF-8/g' /etc/default/locale");
 
 
 // Load application installers automatically (sorted for deterministic order)
@@ -282,7 +281,7 @@ foreach ($apps as $app) {
 }
 
 
-passthru('/scripts/util/setupLetsEncrypt.php noreplies@pulsedmedia.com');
+runStep('Updating Let\'s Encrypt configuration', '/scripts/util/setupLetsEncrypt.php noreplies@pulsedmedia.com');
 
 
 // Autodl irssi cfg
@@ -306,9 +305,14 @@ $servicesToCheck = array(
     'lighttpd'
 );
 foreach ($servicesToCheck AS $thisService) {
-    if (file_exists('/etc/init.d/' . $thisService)) passthru("/etc/init.d/{$thisService} stop");
-    if ($distroVersion < 10) passthru("update-rc.d {$thisService} disable");
-		else passthru("systemctl disable {$thisService}");
+    if (file_exists('/etc/init.d/' . $thisService)) {
+        runStep("Stopping legacy service {$thisService}", "/etc/init.d/{$thisService} stop");
+    }
+    if ($distroVersion < 10) {
+        runStep("Disabling {$thisService} in sysvinit", "update-rc.d {$thisService} disable");
+    } else {
+        runStep("Disabling {$thisService} systemd unit", "systemctl disable {$thisService}");
+    }
 }
 
 
@@ -324,12 +328,12 @@ if (!file_exists('/usr/bin/mediainfo')) {
     // Use LSB release codename when building package URLs
     $mediaVersion = $lsbrelease;
     if (!empty($mediaVersion)) {
-        passthru("wget http://pulsedmedia.com/remote/pkg/libzen0_0.4.24-1_amd64.Debian_{$mediaVersion}.deb");
-        passthru("wget http://pulsedmedia.com/remote/pkg/libmediainfo0_0.7.53-1_amd64.Debian_{$mediaVersion}.deb");
-        passthru("wget http://pulsedmedia.com/remote/pkg/mediainfo_0.7.52-1_amd64.Debian_{$mediaVersion}.deb");
-        passthru("dpkg -i libzen0_0.4.24-1_amd64.Debian_{$mediaVersion}.deb");
-        passthru("dpkg -i libmediainfo0_0.7.53-1_amd64.Debian_{$mediaVersion}.deb");
-        passthru("dpkg -i mediainfo_0.7.52-1_amd64.Debian_{$mediaVersion}.deb");
+        runStep('Downloading libzen package', "wget http://pulsedmedia.com/remote/pkg/libzen0_0.4.24-1_amd64.Debian_{$mediaVersion}.deb");
+        runStep('Downloading libmediainfo package', "wget http://pulsedmedia.com/remote/pkg/libmediainfo0_0.7.53-1_amd64.Debian_{$mediaVersion}.deb");
+        runStep('Downloading mediainfo package', "wget http://pulsedmedia.com/remote/pkg/mediainfo_0.7.52-1_amd64.Debian_{$mediaVersion}.deb");
+        runStep('Installing libzen', "dpkg -i libzen0_0.4.24-1_amd64.Debian_{$mediaVersion}.deb");
+        runStep('Installing libmediainfo', "dpkg -i libmediainfo0_0.7.53-1_amd64.Debian_{$mediaVersion}.deb");
+        runStep('Installing mediainfo', "dpkg -i mediainfo_0.7.52-1_amd64.Debian_{$mediaVersion}.deb");
     }
     chdir($current);
 }
@@ -338,211 +342,21 @@ if (!file_exists('/usr/bin/mediainfo')) {
 
 
 // Lighttpd config security update
-`chmod 750 /etc/lighttpd/lighttpd.conf`;
-`chown www-data.www-data /etc/lighttpd/lighttpd.conf`;
-`chown www-data.www-data /etc/lighttpd/.htpasswd`;
-`chmod 750 /etc/lighttpd/.htpasswd`;
+runStep('Adjusting /etc/lighttpd/lighttpd.conf permissions', 'chmod 750 /etc/lighttpd/lighttpd.conf');
+runStep('Setting ownership on /etc/lighttpd/lighttpd.conf', 'chown www-data.www-data /etc/lighttpd/lighttpd.conf');
+runStep('Setting ownership on /etc/lighttpd/.htpasswd', 'chown www-data.www-data /etc/lighttpd/.htpasswd');
+runStep('Adjusting /etc/lighttpd/.htpasswd permissions', 'chmod 750 /etc/lighttpd/.htpasswd');
 
 
 // Per user updates
-$changedConfig = array();
-$rutorrentIndexSha = sha1( file_get_contents('/etc/skel/www/rutorrent/index.html') );
-
-foreach($users AS $thisUser) {
-    if (empty($thisUser)) continue; // just to be on safe side.
-    if (!file_exists("/home/{$thisUser}/.rtorrent.rc")) continue;   // Probably a removed user
-    if (!file_exists("/home/{$thisUser}/data")) continue; // probably removed user
-    if (file_exists("/home/{$thisUser}/www-disabled")) continue; // User is suspended
- 
-    echo "***** Updating user {$thisUser}\n";
-    // Helpful when tracing user-specific issues during upgrades
-    logmsg("Updating user {$thisUser}");
-
-    echo "\tConfiguring lighttpd\n";
-    passthru("/scripts/util/configureLighttpd.php {$thisUser}");
-	
-     #Update PHP.ini
-    if (file_exists("/home/{$thisUser}/.lighttpd/php.ini")) {
-        // Parse the user's php.ini
-        $phpIni = parse_ini_file("/home/{$thisUser}/.lighttpd/php.ini");
-
-        // Check if error_log is set
-        if (!isset($phpIni['error_log'])) {
-        // If error_log is not set, set it and write the file back
-        $phpIni['error_log'] = "/home/{$thisUser}/.lighttpd/error.log";
-
-        // Build the new contents of the php.ini file
-        $newPhpIni = '';
-        foreach ($phpIni as $key => $value) {
-            $newPhpIni .= "{$key} = \"{$value}\"\n";
-        }
-
-        // Write the new php.ini contents
-        file_put_contents("/home/{$thisUser}/.lighttpd/php.ini", $newPhpIni);
-        echo "Updated php.ini for user {$thisUser}\n";
-        }
+$rutorrentIndexSha = sha1(file_get_contents('/etc/skel/www/rutorrent/index.html'));
+foreach ($users as $thisUser) {
+    if ($thisUser === '') {
+        continue;
     }
-
-	
-  
-	
-    // temp directory for ruTorrent
-    if (!file_exists("/home/{$thisUser}/.tmp")) {
-        mkdir("/home/{$thisUser}/.tmp");
-        passthru("chown {$thisUser}.{$thisUser} /home/{$thisUser}/.tmp");
-    }
-
-    # Add irssi basic config
-	# TODO this probably can be removed soon -Aleksi 20/07/2020
-    if (!file_exists("/home/{$thisUser}/.irssi")) {
-        passthru("mkdir /home/{$thisUser}/.irssi; cp /etc/skel/.irssi/config /home/{$thisUser}/.irssi/; chown {$thisUser}.{$thisUser} /home/{$thisUser}/.irssi -R");
-    }
-    
-
-    
-    
-    
-    // Recycle dir + perms?
-    $thisFile = "/home/{$thisUser}/www/recycle";
-    if (!file_exists($thisFile)) {
-        mkdir($thisFile);
-        passthru("chown {$thisUser}.{$thisUser} {$thisFile}");
-        passthru("chmod 771 {$thisFile}");
-    }
-    
-    // Update specific files
-    //updateUserFile("www/rutorrent/index.html", $thisUser);      // Update rutorrent index.html	-- which prevented rutorrent update code from running
-    /*updateUserFile('www/rutorrent/plugins/create/conf.php', $thisUser);
-    updateUserFile('www/rutorrent/plugins/hddquota/action.php', $thisUser);*/
-    updateUserFile('.rtorrentExecute.php', $thisUser);
-    updateUserFile('.rtorrentRestart.php', $thisUser);
-    updateUserFile('.bashrc', $thisUser);
-    updateUserFile('.qbittorrentPort.py', $thisUser);
-    updateUserFile('.delugePort.py', $thisUser);
-    updateUserFile('.scriptsInc.php', $thisUser);
-    updateUserFile('.lighttpd/php.ini', $thisUser);
-    updateUserFile('www/filemanager.php', $thisUser);
-    updateUserFile("www/openvpn-config.tgz", $thisUser);  // OpenVPN Config
-	// ruTorrent fix for 0.9.8 / 0.13.8 rtorrent/libtorrent versions
-    updateUserFile("www/rutorrent/js/content.js", $thisUser);
-    updateUserFile("www/rutorrent/php/settings.php", $thisUser);
-   
-    //Very old compatibility thingy for phpXplorer to Ajaxplorer migration ... needed like around 2012, thanks Mattx for reminding -Aleksi 23/11/2022
-    if (file_exists("/home/{$thisUser}/www/phpXplorer")) unlink("/home/{$thisUser}/www/phpXplorer");
- 
-    // If doing recursive glob (slightly problematic) we could patch update whole GUI on each server update... ;)
-    $files = glob("/etc/skel/www/rutorrent/plugins/hddquota/*");    #TODO Figure out this path fiasko right here!
-    foreach($files AS $thisFile) {
-        $thisFile = str_replace('/etc/skel/', '', $thisFile);
-        updateUserFile($thisFile, $thisUser);
-    }
-
-    // Themes update to include https://github.com/artyuum/3rd-party-ruTorrent-Themes and make MaterialDesign the default
-    updateUserFile("www/rutorrent/plugins/theme/conf.php", $thisUser);
-    $themesPath = "/home/{$thisUser}/www/rutorrent/plugins/theme/themes/";
-    $themesToCheck = array(
-        'Agent34',
-        'Agent46',
-        'OblivionBlue',
-        'FlatUI_Dark',
-        'FlatUI_Light',
-        'FlatUI_Material',
-        'MaterialDesign',
-        'club-QuickBox'
-    );
-    foreach($themesToCheck AS $thisTheme) {
-        if (!file_exists($themesPath . $thisTheme))
-            `cp -r /etc/skel/www/rutorrent/plugins/theme/themes/{$thisTheme} {$themesPath}; chown {$thisUser}.{$thisUser} {$themesPath}/{$thisTheme} -R;`;
-
-    }
-
-
-
-    ## UPDATE RuTorrent
-    if (!file_exists("/home/{$thisUser}/www/oldRutorrent-3") &&
-        //strpos( file_get_contents("/home/{$thisUser}/www/rutorrent/plugins/_noty/plugin.info"), 'plugin.version: 3.7' ) === false  ) {
-        $rutorrentIndexSha != sha1( file_get_contents("/home/{$thisUser}/www/rutorrent/index.html") ) ) {
-
-        
-        echo "****** Updating ruTorrent\n";
-        echo "******* Backing up old as 'oldRutorrent-3'\n";
-        passthru("mv /home/{$thisUser}/www/rutorrent /home/{$thisUser}/www/oldRutorrent-3");
-        echo "******* Copying new rutorrent from skel\n";
-        passthru("cp -Rp /etc/skel/www/rutorrent /home/{$thisUser}/www/");
-        echo "******* Configuring\n";
-        passthru("cp -p /home/{$thisUser}/www/oldRutorrent-3/conf/config.php /home/{$thisUser}/www/rutorrent/conf/");       // Base config
-        passthru("cp -rp /home/{$thisUser}/www/oldRutorrent-3/share/* /home/{$thisUser}/www/rutorrent/share/");   // User settings
-        
-        // New additions to ruTorrent config!
-/*        $thisUserRtorrentConfig = $rtorrentConfig->readUserConfig( $thisUser );
-        $thisUserScgiPort = explode(':', $thisUserRtorrentConfig['scgi_port']);
-        if (isset($thisUserScgiPort[1])) $thisUserScgiPort = $thisUserScgiPort[1];
-*/
-
-        updateRutorrentConfig($thisUser, 1);
-        
-        passthru("chown {$thisUser}.{$thisUser} /home/{$thisUser}/www/rutorrent");
-        passthru("chown {$thisUser}.{$thisUser} /home/{$thisUser}/www/rutorrent -R");
-        passthru("chmod 751 /home/{$thisUser}/www/rutorrent");
-        passthru("chmod 751 /home/{$thisUser}/www/rutorrent -R");
-    }
-    
-    // Remove plugins we do not want to be included. CPULoad is misleading and autotools doesn't work anymore, maintainer has disappeared
-    if (file_exists("/home/{$thisUser}/www/rutorrent/plugins/cpuload")) shell_exec("rm -rf /home/{$thisUser}/www/rutorrent/plugins/cpuload");
-//    if (file_exists("/home/{$thisUser}/www/rutorrent/plugins/check_port")) shell_exec("rm -rf /home/{$thisUser}/www/rutorrent/plugins/check_port");
-
-    if (!file_exists("/home/{$thisUser}/www/rutorrent/plugins/unpack")) {
-        shell_exec("cp -Rp /etc/skel/www/rutorrent/plugins/unpack /home/{$thisUser}/www/rutorrent/plugins/unpack");
-        shell_exec("chown {$thisUser}.{$thisUser} /home/{$thisUser}/www/rutorrent/plugins/unpack -R; chmod 755 /home/{$thisUser}/www/rutorrent/plugins/unpack -R");
-    }
-    //if (file_exists("/home/{$thisUser}/www/rutorrent/plugins/check_port")) shell_exec("rm -rf /home/{$thisUser}/www/rutorrent/plugins/check_port");     // Doesn't function anymore
-    
-    // Retracker config
-    $retrackerConfigPath = "/home/{$thisUser}/www/rutorrent/share/users/{$thisUser}/settings";
-    /*if (!file_exists($retrackerConfigPath . '/retrackers.dat')) {
-        if (!file_exists($retrackerConfigPath)) {
-            mkdir($retrackerConfigPath, 0777, true);
-            
-            passthru("chown {$thisUser}.{$thisUser} /home/{$thisUser}/www/rutorrent/share/users/{$thisUser}");
-            passthru("chown {$thisUser}.{$thisUser} /home/{$thisUser}/www/rutorrent/share/users/{$thisUser}/torrents");
-        }
-        
-        if (file_exists($retrackerConfigPath))
-            file_put_contents($retrackerConfigPath . '/retrackers.dat', 'O:11:"rRetrackers":4:{s:4:"hash";s:14:"retrackers.dat";s:4:"list";a:1:{i:0;a:1:{i:0;s:33:"http://149.5.241.17:6969/announce";}}s:14:"dontAddPrivate";s:1:"1";s:10:"addToBegin";s:1:"1";}');
-    }*/
-
-    if (file_exists($retrackerConfigPath . '/retrackers.dat')) {
-        $retrackCurrent = trim( file_get_contents($retrackerConfigPath . '/retrackers.dat') );
-        if (sha1($retrackCurrent) == '9958caa274c2df67ea6702772821856365bc1201') unlink($retrackerConfigPath . '/retrackers.dat');
-    }
-    
-    if (!file_exists("/home/{$thisUser}/www/rutorrent/share/users/{$thisUser}/torrents") &&
-        file_exists("/home/{$thisUser}/www/rutorrent/share/users/{$thisUser}") ) {
-        
-        mkdir("/home/{$thisUser}/www/rutorrent/share/users/{$thisUser}/torrents", 0777, true);
-        passthru("chown {$thisUser}.{$thisUser} {$retrackerConfigPath}");
-    }
-    
-    $thisRssDirectory = "/home/{$thisUser}/www/rutorrent/share/settings/rss";
-    if (!file_exists($thisRssDirectory)) {
-        mkdir($thisRssDirectory);
-        passthru("chown {$thisUser}.{$thisUser} {$thisRssDirectory}");
-        echo "\t*** Created RSS Settings folder\n";
-    }
-
-    
-        // Let's update permissions
-    passthru("/scripts/util/userPermissions.php {$thisUser}");
-
-   // Remove the logging things, logged way way way too much. But only remove if it's the original way too verbose logging
-   if (file_exists("/home/{$thisUser}/.rtorrent.rc.custom")) {
-     $rcCustomSha = sha1(file_get_contents("/home/{$thisUser}/.rtorrent.rc.custom"));
- 
-     if ($rcCustomSha == 'dcf21704d49910d1670b3fdd04b37e640b755889' or
-         $rcCustomSha == 'dd10dc08de4cc9a55f554d98bc0ee8c85666b63a' )
-             shell_exec("cp /etc/skel/.rtorrent.rc.custom /home/{$thisUser}/"); //unlink("/home/{$thisUser}/.rtorrent.rc.custom");
-   }   
-   
+    pmssUpdateUserEnvironment($thisUser, [
+        'rutorrent_index_sha' => $rutorrentIndexSha,
+    ]);
 }
 
 /*
@@ -567,7 +381,7 @@ if ($sshdConfig != $sshdConfigChanged) {
     echo "# Allowing SSH Key based authentication.\n";
     copy('/etc/ssh/sshd_config', '/etc/ssh/pmss.sshd_config');  // Backup original
     file_put_contents('/etc/ssh/sshd_config', $sshdConfigChanged);
-    passthru('/etc/init.d/ssh restart');
+    runStep('Restarting sshd service after config update', '/etc/init.d/ssh restart');
 }
 
 
@@ -603,7 +417,7 @@ if (strpos($serverHostname, '.pulsedmedia.com') !== false) {
 if (!file_exists('/var/www/testfile') or
     filesize('/var/www/testfile') != 104857600 ) {
         
-    `dd if=/dev/urandom of=/var/www/testfile bs=1M count=100`;
+    runStep('Generating /var/www/testfile sample', 'dd if=/dev/urandom of=/var/www/testfile bs=1M count=100 status=none');
 }
 
 
@@ -625,21 +439,35 @@ if (!file_exists('/etc/seedbox/config/api.remoteKey')) {
 
 
 
-passthru("/scripts/util/configureLighttpd.php");
-passthru("/scripts/util/createNginxConfig.php");
-passthru("/scripts/util/checkUserHtpasswd.php");
-passthru("/etc/init.d/nginx restart");
-passthru("/scripts/cron/checkLighttpdInstances.php");
+runStep('Post-update lighttpd configuration refresh', '/scripts/util/configureLighttpd.php');
+runStep('Post-update nginx configuration refresh', '/scripts/util/createNginxConfig.php');
+runStep('Post-update htpasswd verification', '/scripts/util/checkUserHtpasswd.php');
+runStep('Restarting nginx after configuration refresh', '/etc/init.d/nginx restart');
+runStep('Checking lighttpd instances after update', '/scripts/cron/checkLighttpdInstances.php');
 
 // Ensure skeleton permissions and misc configs are up to date
-passthru('/scripts/util/setupSkelPermissions.php');
-passthru('/scripts/util/setupRootCron.php');
-passthru('/scripts/util/ftpConfig.php');
+runStep('Refreshing skeleton permissions', '/scripts/util/setupSkelPermissions.php');
+runStep('Refreshing root cron configuration', '/scripts/util/setupRootCron.php');
+runStep('Refreshing FTP configuration', '/scripts/util/ftpConfig.php');
 //passthru('/scripts/util/setupApiKey.php');
 
 
+$logrotateTemplate = '/etc/seedbox/config/template.logrotate.pmss';
+if (file_exists($logrotateTemplate)) {
+    runStep('Installing logrotate policy for PMSS update logs', sprintf('cp %s /etc/logrotate.d/pmss-update', escapeshellarg($logrotateTemplate)));
+    runStep('Setting permissions on PMSS logrotate policy', 'chmod 644 /etc/logrotate.d/pmss-update');
+}
+
+
 // Restore the default crontab for all users
-passthru('/scripts/listUsers.php | xargs -r -I\'{1}\' crontab -u {1} /etc/seedbox/config/user.crontab.default');
+$crontabRestore = sprintf(
+    'bash -lc %s',
+    escapeshellarg('/scripts/listUsers.php | xargs -r -I{} crontab -u {} /etc/seedbox/config/user.crontab.default')
+);
+runStep(
+    'Restoring default crontab for all users',
+    $crontabRestore
+);
 
 
 
@@ -669,11 +497,11 @@ EOF;
     logmsg('Created default network configuration');
 
 }
-`/scripts/util/setupNetwork.php`;
+runStep('Reapplying network configuration', '/scripts/util/setupNetwork.php');
 
 // Temporary security hardening until dedicated script exists
-`chmod o-r /var/log/wtmp /var/run/utmp  /usr/bin/netstat /usr/bin/who /usr/bin/w`;
+runStep('Hardening access to session and network binaries', 'chmod o-r /var/log/wtmp /var/run/utmp /usr/bin/netstat /usr/bin/who /usr/bin/w');
 
 // Mark the end of phase 2 so log parsing knows we finished cleanly
+pmssProfileSummary();
 logmsg('update-step2.php completed');
-

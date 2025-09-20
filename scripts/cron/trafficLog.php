@@ -13,9 +13,6 @@ $logger = new Logger(__FILE__);
  * @author Aleksi
  */
 
-//CNC server not in use anymore, new management uses pull type instead of push
-//require_once '/scripts/lib/serverApi.php';
-//$serverApi = new remoteServerApi();
 
 $logdir = '/var/log/pmss/traffic/';
 $users = trim( `/scripts/listUsers.php` );
@@ -100,8 +97,7 @@ foreach($users AS $thisUser) {
     if ($thisUserTrafficLocal > 0)
         file_put_contents($logdir . $thisUser . '-localnet', date('Y-m-d H:i:s') . ": {$thisUserTrafficLocal}\n", FILE_APPEND);
 
-    // Perhaps we should  remove this as we've not been using this maybe close to a decade now? 
-    //$serverApi->makeCall('userTraffic', array('username' => $thisUser, 'traffic' => trim($thisUserTraffic) ) );
+    // API push removed; central collector now uses pull workflow.
 }
 
 // Let's take unmatched!

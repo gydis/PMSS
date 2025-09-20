@@ -15,7 +15,6 @@
  * Exit codes: 0 OK · 11 parse · 12 download · 13 verify · 14 deploy
  */
 declare(strict_types=1);
-require_once '/scripts/lib/update.php';
 
 /* ───── PHP 7 polyfills ───── */
 if (!function_exists('str_contains')) {
@@ -37,9 +36,10 @@ if (in_array('--help', $argv, true)) {
 }
 
 /* ───── constants ───── */
-const VERSION_FILE = '/etc/seedbox/config/version';
-const LOG_FILE     = PMSS_LOG_FILE;
-
+$pmssVersionDir = getenv('PMSS_VERSION_DIR') ?: '/etc/seedbox/config';
+define('PMSS_VERSION_DIR', $pmssVersionDir);
+const VERSION_FILE = PMSS_VERSION_DIR.'/version';
+const VERSION_META_FILE = PMSS_VERSION_DIR.'/version.meta';
 require_once __DIR__.'/lib/logger.php';
 $logger = new Logger(__FILE__);
 $GLOBALS['logger'] = $logger;
@@ -68,170 +68,271 @@ function selfUpdate(): void {
     exit($rc);
 }
 
-requireRoot();
-selfUpdate();
-
 /* ───── distro helpers ───── */
 function defaultSpec(): string {
-    $ver = (int)getDistroVersion();
-    if ($ver === 10) return 'release';
     return 'git/main:' . date('Y-m-d');
 }
 
-/* ───── runtime flags ───── */
-$verbose     = in_array('--verbose',     $argv, true);
-$scriptonly  = in_array('--scriptonly',  $argv, true);
-$updatedistro = in_array('--updatedistro', $argv, true);
-
-/* ───── logging helpers ───── */
-
-function logmsg(string $m): void {
-    logMessage($m);
-}
-function fatal(string $m, int $c): never { logmsg("[FATAL] $m"); exit($c); }
-
-
-
-/* ───── shell helpers ───── */
-function sh(string $cmd, bool $v=false): void {
-    $rc = runCommand($cmd, $v);
-    if ($rc !== 0) fatal("cmd failed: $cmd", EXIT_DL);
-}
-function sh_retry(string $cmd, bool $v=false, int $max=RETRIES): void {
-    for ($a=1;$a<=$max;$a++) {
-        $rc = runCommand($cmd, $v);
-        if ($rc === 0) return;
-        if ($a === $max) fatal("retry fail: $cmd", EXIT_DL);
-        sleep($a);
+function normaliseSpec(string $spec): string
+{
+    $spec = trim($spec);
+    if ($spec === '') {
+        return '';
     }
-}
-
-/* ───── misc helpers ───── */
-function tmpd(): string {
-    $d = sys_get_temp_dir().'/PMSS_'.bin2hex(random_bytes(6));
-    if (!mkdir($d,0700)) fatal("mkdir $d", EXIT_DL);
-    return $d;
-}
-function tagExists(string $t): bool {
-    $h = @get_headers(
-        'https://api.github.com/repos/MagnaCapax/PMSS/releases/tags/'.rawurlencode($t),
-        false,
-        stream_context_create(['http'=>['user_agent'=>CURL_UA]])
-    );
-    return $h && preg_match('/HTTP\/.* (2|3)\d\d/', $h[0]);
-}
-
-/* ───── parse source spec ───── */
-$cli = array_values(array_diff($argv,['--verbose','--scriptonly','--help','--updatedistro']));
-array_shift($cli);
-
-// Load saved version or use default
-$spec = $cli[0] ?? '';
-if ($spec === '') {
-    $raw = trim(@file_get_contents(VERSION_FILE) ?: '');
-    if ($raw !== '' && preg_match('/\d{2}:\d{2}$/', $raw)) {
-        $raw = preg_replace('/\s*\d{2}:\d{2}$/', '', $raw); // drop HH:MM
+    if (preg_match('/^(git|release)([\/:]).+/i', $spec)) {
+        return $spec;
     }
-    $spec = $raw !== '' ? $raw : '';
-}
-if ($spec === '' || !preg_match('/^(git|release)([\/:])(.*)$/i', $spec)) {
-    $spec = defaultSpec();
-}
-
-if (!preg_match('/^(git|release)([\/:])(.*)$/i', $spec, $m))
-    fatal("bad spec '$spec'", EXIT_PARSE);
-
-$type = strtolower($m[1]);
-$rest = $m[3];
-$repo = DEFAULT_REPO;
-$branch = 'main';
-$date = '';
-
-if ($type === 'release') {
-    $date = ltrim($rest, ':');
-    if ($date === '') {
-        $json = json_decode(
-            file_get_contents(
-                'https://api.github.com/repos/MagnaCapax/PMSS/releases/latest',
-                false,
-                stream_context_create(['http'=>['user_agent'=>CURL_UA]])
-            ), true
-        );
-        $date = $json['tag_name'] ?? fatal('GitHub API tag missing', EXIT_PARSE);
-    } elseif (!tagExists($date)) {
-        fatal("Release tag '$date' not found", EXIT_PARSE);
+    if (preg_match('/^git\s+(.*)$/i', $spec, $m)) {
+        $rest = str_replace(' ', '', $m[1]);
+        return $rest === '' ? 'git/main' : 'git/'.$rest;
     }
-} else {                                           /* ── git ── */
-    if (preg_match('/:(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)$/', $rest, $mm)) {
-        $date = $mm[1];
-        $rest = substr($rest, 0, -strlen($mm[0])); // strip date
+    if (preg_match('/^release\s*(.*)$/i', $spec, $m)) {
+        $rest = trim($m[1]);
+        return $rest === '' ? 'release' : 'release:'.$rest;
     }
-    if (preg_match('#^(https?|ssh)://#', $rest)) { // repo URL
-        $pos = strrpos($rest, ':');
-        if ($pos !== false && $pos > 8) {
-            $repo   = substr($rest, 0, $pos);
-            $branch = substr($rest, $pos + 1) ?: 'main';
-        } else {
-            $repo   = $rest;
-            $branch = 'main';
+    if (preg_match('#^(https?|ssh)://#', $spec)) {
+        return 'git/'.$spec;
+    }
+    if (preg_match('/^[a-z0-9._\-]+$/i', $spec)) {
+        return 'git/'.$spec;
+    }
+    return '';
+}
+
+function pmssWriteVersionFiles(string $versionSpec, array $meta, ?int $timestamp = null, bool $dryRun = false, ?string $baseDir = null): array
+{
+    $timestamp = $timestamp ?? time();
+    $line = $versionSpec.'@'.date('Y-m-d H:i', $timestamp);
+    $meta['recorded_spec'] = $versionSpec;
+    $meta['timestamp'] = $meta['timestamp'] ?? date('c', $timestamp);
+
+    if (!$dryRun) {
+        $baseDir = $baseDir ?? PMSS_VERSION_DIR;
+        if (!is_dir($baseDir)) {
+            @mkdir($baseDir, 0755, true);
         }
-    } elseif (str_contains($rest, ':')) {          // repo:branch
-        [$repo, $branch] = explode(':', $rest, 2);
-        $branch = $branch ?: 'main';
-    } else {                                       // branch only
-        $branch = $rest;
+        file_put_contents($baseDir.'/version', $line.PHP_EOL);
+        file_put_contents($baseDir.'/version.meta', json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
     }
-    if (!preg_match('#://|/#', $repo)) {           // safety net
-        $branch = $repo ?: $branch;
-        $repo   = DEFAULT_REPO;
-    }
+
+    return [
+        'line' => $line,
+        'meta' => $meta,
+    ];
 }
+
+function pmssRunUpdate(array $argv): int
+{
+    global $logger;
+
+    require_once __DIR__.'/lib/update.php';
+
+    if (!defined('PMSS_TEST_MODE')) {
+        requireRoot();
+        selfUpdate();
+    }
+
+    $verbose = false;
+    $scriptonly = false;
+    $updatedistro = false;
+    $dryRun = false;
+    $jsonLog = false;
+    $profileOutput = null;
+
+    $cli = [];
+    foreach (array_slice($argv, 1) as $arg) {
+        if ($arg === '--verbose') { $verbose = true; continue; }
+        if ($arg === '--scriptonly') { $scriptonly = true; continue; }
+        if ($arg === '--updatedistro') { $updatedistro = true; continue; }
+        if ($arg === '--dry-run') { $dryRun = true; continue; }
+        if ($arg === '--jsonlog') { $jsonLog = true; continue; }
+        if (str_starts_with($arg, '--profile-output=')) {
+            $profileOutput = substr($arg, strlen('--profile-output='));
+            $profileOutput = trim($profileOutput) === '' ? null : $profileOutput;
+            continue;
+        }
+        $cli[] = $arg;
+    }
+
+    $specInput = $cli[0] ?? '';
+    if ($specInput === '') {
+        $raw = trim(@file_get_contents(VERSION_FILE) ?: '');
+        if ($raw !== '' && strpos($raw, '@') !== false) {
+            [$rawSpec,] = explode('@', $raw, 2);
+            $raw = trim($rawSpec);
+        } elseif ($raw !== '' && preg_match('/\d{2}:\d{2}$/', $raw)) {
+            $raw = preg_replace('/\s*\d{2}:\d{2}$/', '', $raw);
+        }
+        $specInput = $raw !== '' ? $raw : '';
+    }
+
+    $spec = normaliseSpec($specInput);
+    if ($spec === '') {
+        $logger->msg("Source spec '{$specInput}' empty, defaulting to git/main");
+        $spec = defaultSpec();
+    }
+
+    if (!preg_match('/^(git|release)([\/:])(.*)$/i', $spec, $m)) {
+        $logger->msg("Unrecognised source spec '{$specInput}', forcing git/main");
+        $spec = defaultSpec();
+        if (!preg_match('/^(git|release)([\/:])(.*)$/i', $spec, $m)) {
+            fatal("bad spec '$spec'", EXIT_PARSE);
+        }
+    }
+
+    $type = strtolower($m[1]);
+    $rest = $m[3];
+    $repo = DEFAULT_REPO;
+    $branch = 'main';
+    $date = '';
+
+    if ($type === 'release') {
+        $date = ltrim($rest, ':');
+        if ($date === '') {
+            $json = json_decode(
+                file_get_contents(
+                    'https://api.github.com/repos/MagnaCapax/PMSS/releases/latest',
+                    false,
+                    stream_context_create(['http'=>['user_agent'=>CURL_UA]])
+                ), true
+            );
+            $date = $json['tag_name'] ?? fatal('GitHub API tag missing', EXIT_PARSE);
+        } elseif (!tagExists($date)) {
+            fatal("Release tag '$date' not found", EXIT_PARSE);
+        }
+    } else {
+        if (preg_match('/:(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)$/', $rest, $mm)) {
+            $date = $mm[1];
+            $rest = substr($rest, 0, -strlen($mm[0]));
+        }
+        if (preg_match('#^(https?|ssh)://#', $rest)) {
+            $pos = strrpos($rest, ':');
+            if ($pos !== false && $pos > 8) {
+                $repo   = substr($rest, 0, $pos);
+                $branch = substr($rest, $pos + 1) ?: 'main';
+            } else {
+                $repo   = $rest;
+                $branch = 'main';
+            }
+        } elseif (str_contains($rest, ':')) {
+            [$repo, $branch] = explode(':', $rest, 2);
+            $branch = $branch ?: 'main';
+        } else {
+            $branch = $rest;
+        }
+        if (!preg_match('#://|/#', $repo)) {
+            $branch = $repo ?: $branch;
+            $repo   = DEFAULT_REPO;
+        }
+    }
     $logger->msg("Source → $type repo=$repo branch=$branch date='$date'");
 
-/* ───── download tree ───── */
-$tmp = tmpd();
-if ($type === 'release') {
-    $tar = "$tmp/src.tgz";
-    sh_retry("curl -L --fail -A ".escapeshellarg(CURL_UA)." https://api.github.com/repos/MagnaCapax/PMSS/tarball/$date -o ".escapeshellarg($tar), $verbose);
-    sh("tar -xzf ".escapeshellarg($tar)." -C ".escapeshellarg($tmp)." --strip-components=1", $verbose);
-} else {
-    sh_retry("git clone --depth=1 --branch ".escapeshellarg($branch).' '.escapeshellarg($repo).' '.escapeshellarg($tmp), $verbose);
-    if ($date !== '') {
-        $ref = escapeshellarg("$branch@{{$date}}");
-        sh_retry('cd '.escapeshellarg($tmp).' && git fetch --quiet && git checkout '.$ref, $verbose);
+    $jsonLogPath = null;
+    if ($jsonLog) {
+        $jsonLogPath = '/var/log/pmss-update.jsonl';
+        @mkdir(dirname($jsonLogPath), 0755, true);
+        @touch($jsonLogPath);
+        @chmod($jsonLogPath, 0640);
+        putenv('PMSS_JSON_LOG='.$jsonLogPath);
+    } else {
+        putenv('PMSS_JSON_LOG');
     }
+
+    if ($profileOutput === null && $jsonLogPath !== null) {
+        $profileOutput = $jsonLogPath.'.profile.json';
+    }
+    if ($profileOutput !== null && $profileOutput !== '') {
+        @mkdir(dirname($profileOutput), 0755, true);
+        putenv('PMSS_PROFILE_OUTPUT='.$profileOutput);
+    } else {
+        putenv('PMSS_PROFILE_OUTPUT');
+    }
+
+    $tmp = tmpd();
+    if ($type === 'release') {
+        $tar = "$tmp/src.tgz";
+        sh_retry("curl -L --fail -A ".escapeshellarg(CURL_UA)." https://api.github.com/repos/MagnaCapax/PMSS/tarball/$date -o ".escapeshellarg($tar), $verbose);
+        sh("tar -xzf ".escapeshellarg($tar)." -C ".escapeshellarg($tmp)." --strip-components=1", $verbose);
+    } else {
+        sh_retry("git clone --depth=1 --branch ".escapeshellarg($branch).' '.escapeshellarg($repo).' '.escapeshellarg($tmp), $verbose);
+        if ($date !== '') {
+            $ref = escapeshellarg("$branch@{{$date}}");
+            sh_retry('cd '.escapeshellarg($tmp).' && git fetch --quiet && git checkout '.$ref, $verbose);
+        }
+    }
+
+    foreach (['scripts','etc','var'] as $d) {
+        if (!is_dir("$tmp/$d")) fatal("missing $d", EXIT_VERIFY);
+    }
+
+    sh("cp -rp ".escapeshellarg("$tmp/scripts/")." /scripts", $verbose);
+    sh("cp -rpu ".escapeshellarg("$tmp/etc")." /", $verbose);
+    sh("cp -rp ".escapeshellarg("$tmp/var")." /", $verbose);
+    sh("chmod -R o-rwx /scripts /root /etc/skel /etc/seedbox", $verbose);
+
+    $recordedDate = $date !== '' ? $date : date('Y-m-d');
+    if ($type === 'release') {
+        $versionSpec = 'release' . ($recordedDate !== '' ? ':' . $recordedDate : '');
+    } else {
+        $versionSpec = ($repo === DEFAULT_REPO)
+            ? 'git/'.$branch
+            : 'git/'.$repo.':'.$branch;
+        if ($recordedDate !== '') {
+            $versionSpec .= ':' . $recordedDate;
+        }
+    }
+
+    $commit = '';
+    if ($type === 'release') {
+        $commit = $date ?: '';
+    } else {
+        $commit = trim(@shell_exec('cd '.escapeshellarg($tmp).' && git rev-parse HEAD')) ?: '';
+    }
+
+    $meta = [
+        'spec_input'      => $specInput,
+        'spec_normalized' => $spec,
+        'type'            => $type,
+        'repo'            => $repo,
+        'branch'          => $branch,
+        'pin'             => $date,
+        'commit'          => $commit,
+    ];
+    if ($jsonLogPath !== null) {
+        $meta['json_log'] = $jsonLogPath;
+    }
+    if ($profileOutput !== null) {
+        $meta['profile_output'] = $profileOutput;
+    }
+
+    $versionData = pmssWriteVersionFiles($versionSpec, $meta, null, $dryRun);
+    $versionLine = $versionData['line'];
+
+    sh("rm -rf ".escapeshellarg($tmp), $verbose);
+
+    if ($dryRun) {
+        putenv('PMSS_DRY_RUN=1');
+    } else {
+        putenv('PMSS_DRY_RUN');
+    }
+
+    if (!$scriptonly && file_exists('/scripts/util/update-step2.php') && file_exists('/etc/hostname')) {
+        require '/scripts/util/update-step2.php';
+    } else {
+        $logger->msg('Skipped update‑step2');
+    }
+
+    if (!$scriptonly && $updatedistro && file_exists('/scripts/util/update-distro.php')) {
+        require '/scripts/util/update-distro.php';
+    }
+
+    $prefix = $dryRun ? '[DRY RUN] ' : '';
+    logmsg($prefix."Update OK → $versionSpec");
+    echo $prefix."Update OK → $versionSpec\n";
+
+    return 0;
 }
 
-/* ───── sanity ───── */
-foreach (['scripts','etc','var'] as $d)
-    if (!is_dir("$tmp/$d")) fatal("missing $d", EXIT_VERIFY);
-
-/* ───── DEPLOY (copy‑only) ───── */
-sh("cp -rp ".escapeshellarg("$tmp/scripts/")." /scripts", $verbose);  // copy scripts over safely
-sh("cp -rpu ".escapeshellarg("$tmp/etc")." /", $verbose);            // merge etc (update if newer)
-sh("cp -rp ".escapeshellarg("$tmp/var")." /", $verbose);             // copy var
-sh("chmod -R o-rwx /scripts /root /etc/skel /etc/seedbox", $verbose);
-
-/* ───── record & clean ───── */
-$version = ($type === 'release')
-         ? "release:$date"
-         : "git:$repo:$branch".($date?":$date":'');
-file_put_contents(VERSION_FILE, $version.PHP_EOL);
-sh("rm -rf ".escapeshellarg($tmp), $verbose);
-
-/* ───── phase‑2 ───── */
-if (!$scriptonly && file_exists('/scripts/util/update-step2.php') && file_exists('/etc/hostname')) {
-    require '/scripts/util/update-step2.php';
-} else {
-    $logger->msg('Skipped update‑step2');
+if (basename(__FILE__) === basename($_SERVER['SCRIPT_FILENAME'] ?? '')) {
+    exit(pmssRunUpdate($argv));
 }
-
-
-if (!$scriptonly && $updatedistro && file_exists('/scripts/util/update-distro.php')) 
-    require '/scripts/util/update-distro.php';
-
-
-logmsg("Update OK → $version");
-
-
-echo "Update OK → $version\n";

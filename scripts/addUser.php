@@ -15,9 +15,35 @@ $user = array(
 if (isset($argv[5])) $user['trafficLimit'] = (int) $argv[5];
 if ($user['password'] == 'rand') $user['password'] = '';
     
+require_once 'lib/runtime.php';
 require_once 'lib/rtorrentConfig.php';
 require_once 'lib/users.php';
 $userDb = new users();
+
+/**
+ * Append a message to the provisioning log and console for traceability.
+ */
+function logProvisionMessage(string $message): void
+{
+    global $user;
+    $prefix = date('Y-m-d H:i:s') . " ({$user['name']}): ";
+    @file_put_contents('/var/log/pmss/addUser.log', $prefix.$message.PHP_EOL, FILE_APPEND | LOCK_EX);
+    echo $message.PHP_EOL;
+}
+
+/**
+ * Run a shell command and log whether it succeeded without aborting.
+ */
+function runProvisionStep(string $description, string $command): int
+{
+    $result = runCommand($command, false, 'logProvisionMessage');
+    if ($result !== 0) {
+        logProvisionMessage($description . ' failed (rc=' . $result . ')');
+    } else {
+        logProvisionMessage($description . ' completed');
+    }
+    return $result;
+}
 
 // Get our server hostname, and do some cleanup just to be safe
 $hostname = trim( file_get_contents('/etc/hostname') );
@@ -25,14 +51,30 @@ $hostname = str_replace(array("\n", "\r", "\t"), array('','',''), $hostname);
 
 
 //Create the user
-passthru("useradd --skel /etc/skel -m {$user['name']}");
-passthru("/scripts/changePw.php {$user['name']} {$user['password']}");
-passthru("usermod -U {$user['name']}");
-passthru("usermod --expiredate 2100-01-01 {$user['name']}");
+runProvisionStep(
+    'Create system user',
+    sprintf('useradd --skel /etc/skel -m %s', escapeshellarg($user['name']))
+);
+runProvisionStep(
+    'Set initial password',
+    sprintf('/scripts/changePw.php %s %s', escapeshellarg($user['name']), escapeshellarg($user['password']))
+);
+runProvisionStep(
+    'Unlock user account',
+    sprintf('usermod -U %s', escapeshellarg($user['name']))
+);
+runProvisionStep(
+    'Set expiry far in future',
+    sprintf('usermod --expiredate 2100-01-01 %s', escapeshellarg($user['name']))
+);
 #passthru("usermod -G {$user['name']} www-data");
 
-if (file_exists('/bin/bash'))	// Set shell
-	passthru("chsh -s /bin/bash {$user['name']}");
+if (file_exists('/bin/bash')) { // Set shell
+    runProvisionStep(
+        'Ensure bash shell',
+        sprintf('chsh -s /bin/bash %s', escapeshellarg($user['name']))
+    );
+}
 
 // Then to DB :)
 $userDb->addUser( $user['name'], array(
@@ -44,13 +86,26 @@ $userDb->addUser( $user['name'], array(
 ));
 
 // Assign HTTP server port
-passthru("/scripts/util/portManager.php assign {$user['name']} lighttpd");
+runProvisionStep(
+    'Assign lighttpd port',
+    sprintf('/scripts/util/portManager.php assign %s lighttpd', escapeshellarg($user['name']))
+);
 
 // Configure quota, rtorrent and ruTorrent.
-passthru('/scripts/util/userConfig.php "' . $user['name'] . '" "' . $user['memory'] . '" "' . $user['quota'] . '"');
+runProvisionStep(
+    'Apply user configuration',
+    sprintf('/scripts/util/userConfig.php %s %s %s',
+        escapeshellarg($user['name']),
+        escapeshellarg($user['memory']),
+        escapeshellarg($user['quota'])
+    )
+);
 
-passthru("/scripts/util/configureLighttpd.php {$user['name']}");
-passthru("/scripts/util/createNginxConfig.php");
+runProvisionStep(
+    'Configure lighttpd vhost',
+    sprintf('/scripts/util/configureLighttpd.php %s', escapeshellarg($user['name']))
+);
+runProvisionStep('Regenerate nginx config', '/scripts/util/createNginxConfig.php');
 
 
 #passthru("/scripts/util/recreateLighttpdConfig.php");
@@ -72,15 +127,21 @@ $userHomedirPath = "/home/{$user['name']}";
 
 // Execute per server additional config for user creation IF there is any
 if (file_exists('/etc/seedbox/modules/basic/addUser.php')) {
-    writeLog('Initiating basic module for addUser.php');
+    logProvisionMessage('Initiating basic module for addUser.php');
     include '/etc/seedbox/modules/basic/addUser.php';
 }
 
 // Finally start rTorrent for the user
-passthru('/scripts/startRtorrent ' . $user['name']);
-passthru('/scripts/startLighttpd ' . $user['name']);
-passthru('/etc/init.d/nginx restart');
-passthru('/scripts/util/setupNetwork.php');
+runProvisionStep(
+    'Start rTorrent',
+    sprintf('/scripts/startRtorrent %s', escapeshellarg($user['name']))
+);
+runProvisionStep(
+    'Start lighttpd',
+    sprintf('/scripts/startLighttpd %s', escapeshellarg($user['name']))
+);
+runProvisionStep('Restart nginx', '/etc/init.d/nginx restart');
+runProvisionStep('Refresh network rules', '/scripts/util/setupNetwork.php');
 
 if (!empty($user['trafficLimit']) &&
     $user['trafficLimit'] > 0) {
@@ -89,7 +150,7 @@ if (!empty($user['trafficLimit']) &&
     chmod( "/etc/seedbox/runtime/trafficLimits/{$user['name']}", 0600  );  // Restrict permissions to this file
     file_put_contents("/home/{$user['name']}/.trafficLimit", $user['trafficLimit']);
     chmod( "/home/{$user['name']}/.trafficLimit", 0664  );  // Restrict permissions to this file
-    writeLog('Traffic limit set: ' . $user['trafficLimit']);
+    logProvisionMessage('Traffic limit set: ' . $user['trafficLimit']);
 }
 
 // Retracker config
@@ -105,14 +166,14 @@ if (mkdir($retrackerConfigPath, 0777, true)) {
 
 
 // Crontab for the user
-echo "Adding crontab\n";
-passthru("crontab -u{$user['name']} /etc/seedbox/config/user.crontab.default");
+logProvisionMessage('Adding crontab');
+runProvisionStep(
+    'Install default crontab',
+    sprintf('crontab -u%s /etc/seedbox/config/user.crontab.default', escapeshellarg($user['name']))
+);
 
 // Setting file permissions
-passthru("nohup /scripts/util/userPermissions.php {$user['name']} >> /dev/null 2>&1 &");
-
-function writeLog($message) {
-GLOBAL $user;
-    $message = date('Y-m-d H:i:s') . " ({$user['name']}):\n" . $message . "\n";
-    file_put_contents('/var/log/pmss/addUser.log', $message, FILE_APPEND);
-}
+runProvisionStep(
+    'Queue permissions fix',
+    sprintf('nohup /scripts/util/userPermissions.php %s >> /dev/null 2>&1 &', escapeshellarg($user['name']))
+);

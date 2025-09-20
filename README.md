@@ -16,7 +16,10 @@ More information available at https://wiki.pulsedmedia.com/index.php/PM_Software
 
 ## Documentation
 
-You can find information for common tasks such as adding/creating/suspending users at https://wiki.pulsedmedia.com/index.php/Category:PM_Software_Stack_Guides
+You can find information for common tasks such as adding/creating/suspending users at https://wiki.pulsedmedia.com/index.php/Category:PM_Software_Stack_Guides.
+
+For a quick maintenance checklist covering dry-runs, structured logging and
+tests, see `docs/maintenance.md`.
 
 ### Installation
 
@@ -24,6 +27,12 @@ Install minimal Debian system, and run following as root:
 ```
 wget -q https://github.com/MagnaCapax/PMSS/raw/main/install.sh; bash install.sh
 ```
+
+`install.sh` accepts optional flags for unattended runs:
+- `--hostname=<name>` to set `/etc/hostname` without opening an editor
+- `--skip-hostname` to retain the current hostname
+- `--quota-mount=<mountpoint>` to inject quota options into `/etc/fstab`
+- `--skip-quota` to leave quota configuration manual
 
 ### Update from pre-github version
 
@@ -70,6 +79,8 @@ Pulsed Media as a company will not provide support to use this on your own serve
 ## Contributions
 
 All contributions will be considered. No matter small or big. Your contribution could be as tiny as fixing a typo, or badly worded sentence and it will be much appreciated.
+
+Before submitting updater changes, run the lightweight test suite via `php scripts/lib/tests/Runner.php` to confirm the spec parser still behaves as expected.
 
 Some important guidelines:
 

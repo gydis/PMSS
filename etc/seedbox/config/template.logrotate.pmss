@@ -1,0 +1,10 @@
+/var/log/pmss-update.log /var/log/pmss-update.jsonl /var/log/pmss-update.profile.json {
+    daily
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    sharedscripts
+}

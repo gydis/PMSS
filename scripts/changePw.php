@@ -31,30 +31,51 @@ passthru("chown {$username}.{$username} /home/{$username}/.lighttpd/.htpasswd");
 
 
 
-function generatePassword() {
-   $salts = file_get_contents('/etc/hostname');
-   $salts .= file_get_contents('/etc/debian_version');
-   $salts3 = sha1($salts);
-   $salts = sha1( sha1($salts) . md5(shell_exec('/scripts/listUsers.php')) );
-   
-   $salts = substr( $salts, round(rand(1, 15)), round(rand(2,35)) );
-   $salts2 = md5( time() );
-   $salts = sha1( substr($salts2, 3, 5) . $salts );
-   $salts = substr($salts, round(rand(-0.49999,10)) );
-   
-   $pw = chr( round(rand(97, 122)));
-   $pw .= chr( round(rand(97, 122)));
-   $pw .=  substr($salts, round(rand(0, 48)), 1 );
-   $pw .=  substr($salts2, round(rand(0, 35)), 1 );
-   $pw .= chr( round(rand(97, 122)));
-   $pw .= chr( round(rand(97, 122)));
-   $pw .= chr( round(rand(97, 122)));
-   $pw .=  substr($salts3, round(rand(0, 48)), 1 );
-   $pw .=  substr($salts2, round(rand(0, 35)), 1 );   // Introduce change for 7 chars pw
-    // Following gives chance for 11 chr pw
-   $pw .=  substr($salts, round(rand(0, 48)), 1 );
-   $pw .=  substr($salts2, round(rand(0, 32)), 1 );
-   $pw .=  substr($salts3, round(rand(0, 48)), 1 );
+function generatePassword(): string
+{
+    $legacySeed = legacyPasswordSeed();
+    $prefix = substr($legacySeed, 0, 2);
+    $suffix = substr($legacySeed, -2);
 
-   return $pw;
+    $middleLength = random_int(4, 8);
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+    $middle = '';
+    $alphabetLength = strlen($alphabet) - 1;
+
+    for ($i = 0; $i < $middleLength; $i++) {
+        $middle .= $alphabet[random_int(0, $alphabetLength)];
+    }
+
+    return $prefix . $middle . $suffix;
+}
+
+/**
+ * Reproduce the historic password entropy logic for prefix/suffix material.
+ */
+function legacyPasswordSeed(): string
+{
+    $salts = file_get_contents('/etc/hostname');
+    $salts .= file_get_contents('/etc/debian_version');
+    $salts3 = sha1($salts);
+    $salts = sha1(sha1($salts) . md5(shell_exec('/scripts/listUsers.php')));
+
+    $salts = substr($salts, round(rand(1, 15)), round(rand(2, 35)));
+    $salts2 = md5(time());
+    $salts = sha1(substr($salts2, 3, 5) . $salts);
+    $salts = substr($salts, round(rand(-0.49999, 10)));
+
+    $pw = chr(round(rand(97, 122)));
+    $pw .= chr(round(rand(97, 122)));
+    $pw .= substr($salts, round(rand(0, 48)), 1);
+    $pw .= substr($salts2, round(rand(0, 35)), 1);
+    $pw .= chr(round(rand(97, 122)));
+    $pw .= chr(round(rand(97, 122)));
+    $pw .= chr(round(rand(97, 122)));
+    $pw .= substr($salts3, round(rand(0, 48)), 1);
+    $pw .= substr($salts2, round(rand(0, 35)), 1);
+    $pw .= substr($salts, round(rand(0, 48)), 1);
+    $pw .= substr($salts2, round(rand(0, 32)), 1);
+    $pw .= substr($salts3, round(rand(0, 48)), 1);
+
+    return $pw;
 }

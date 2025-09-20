@@ -22,6 +22,13 @@ Options:
 
 After copying files, phase 2 (`update-step2.php`) performs system-level tasks such as package installation, configuration tweaks and user environment updates.
 
+**Notable behaviours in phase 2**
+- Repository stanzas are sourced from `/etc/seedbox/config/template.sources.*` and the updater keeps `/etc/apt/sources.list.pmss-backup` before writing new content, making manual recovery easier.
+- Firewall rules are rendered as complete tables and applied with `iptables-restore` for atomic updates. When that fails the script logs a warning and falls back to sequential `iptables` calls so networking remains available.
+- Any missing runtime directories (for example `/var/run/pmss`) are recreated with safe permissions, and detailed messages land in `/var/log/pmss-update.log` for troubleshooting.
+- The version selector now normalises bare inputs (for example `main`, `git main`, or `release 2025-07-12`) and defaults to `git/main` when it cannot parse a value. The recorded version file stores the canonical spec followed by `@YYYY-MM-DD HH:MM`, preserving a human-readable timestamp without breaking future runs.
+- Phase 2 accepts `--dry-run`, which executes the logging path without mutating the system, and `--jsonlog`, which mirrors each step into `/var/log/pmss-update.jsonl` for structured ingest.
+
 Example for upgrading to the current release:
 
 ```

@@ -1,13 +1,25 @@
 #!/usr/bin/php
 <?php
-die( passthru('/scripts/systemUsers.php') );    // Temp fix until user db is in wide enough use to support it and apis etc. done
-if (!file_exists('/etc/seedbox/runtime/users')) die( passthru('/scripts/systemUsers.php') );
+require_once __DIR__.'/lib/users.php';
 
-#TODO Comparison of system users if it's too much of an difference
-// We use serialized array because it's easiest to write from PHP :)
-$users = unserialize( file_get_contents('/etc/seedbox/runtime/users') );
-if (!is_array($users)) die("User DB Corrupted.\n");
+/**
+ * Fallback to enumerating system accounts when the runtime DB is empty.
+ */
+function fallbackSystemUsers(): never
+{
+    passthru('/scripts/systemUsers.php');
+    exit(0);
+}
 
-#TODO Check these exist, resort to systemUsers if not.
-foreach ($users AS $thisUser => $userData)
-    echo "{$thisUser}\n";
+$db = new users();
+$records = $db->getUsers();
+if (empty($records)) {
+    fallbackSystemUsers();
+}
+
+$usernames = array_keys($records);
+sort($usernames, SORT_NATURAL);
+
+foreach ($usernames as $name) {
+    echo $name . "\n";
+}
