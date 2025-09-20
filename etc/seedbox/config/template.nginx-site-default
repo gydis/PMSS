@@ -18,11 +18,17 @@ server {
 	include /etc/nginx/users/*;
 
 
+    error_page 401 /error-401.html;
+    location = /error-401.html {
+            root /var/www;
+            internal;
+    }
+
     error_page 502 /error-502.html;
     location = /error-502.html {
             root /var/www;
             internal;
- 	}
+	}
  
     error_page 404 /error-404.html;
     location = /error-404.html {
@@ -47,11 +53,17 @@ server {
     
     include /etc/nginx/users/*;
 
+    error_page 401 /error-401.html;
+    location = /error-401.html {
+        root /var/www;
+        internal;
+    }
+
     error_page 502 /error-502.html;
     location = /error-502.html {
             root /var/www;
             internal;
- 	}
+	}
  
     error_page 404 /error-404.html;
     location = /error-404.html {

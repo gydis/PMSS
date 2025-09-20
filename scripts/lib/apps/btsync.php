@@ -13,8 +13,21 @@ if (!file_exists('/usr/bin/btsync2.2')) {
     passthru("wget http://pulsedmedia.com/remote/pkg/btsync2.2 -O /usr/bin/btsync2.2; chmod 755 /usr/bin/btsync2.2");
 }
 
-unlink('/usr/bin/btsync');	#TODO Temporary only for transition period. Remove this after 04/2020
-if (!file_exists('/usr/bin/btsync')) {
+$btsyncPath = '/usr/bin/btsync';
+if (is_link($btsyncPath) && readlink($btsyncPath) !== '/usr/bin/btsync2.2') {
+    unlink($btsyncPath);
+}
+
+if (file_exists($btsyncPath) && !is_link($btsyncPath)) {
+    $backup = $btsyncPath.'.legacy';
+    if (@rename($btsyncPath, $backup)) {
+        echo "Legacy btsync preserved at {$backup}\n";
+    } else {
+        echo "Warning: unable to back up existing btsync binary\n";
+    }
+}
+
+if (!file_exists($btsyncPath)) {
     passthru('ln -s /usr/bin/btsync2.2 /usr/bin/btsync');
 }
 

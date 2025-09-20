@@ -2,9 +2,13 @@
 # Pulsed Media Seedbox Management Software "PMSS"
 # Rclone installer + update
 
-// Define version first
-# TODO just get the version # from https://rclone.org/downloads/ ....
-$rcloneVersion = '1.69.1';
+// Version pinning keeps deployments reproducible; opt-in fetch updates on demand.
+[$rcloneVersion, $fetchedLatest] = pmssResolveRcloneVersion();
+
+# Optional info when a newer version is requested
+if ($fetchedLatest) {
+    echo "Requested latest rclone release: {$rcloneVersion}\n";
+}
 
 #Check rclone version
 if (file_exists('/usr/bin/rclone')) {
@@ -24,3 +28,65 @@ if (!file_exists('/usr/bin/rclone')) {
 if (file_exists('/usr/sbin/rclone') &&
     !file_exists('/usr/bin/rclone') )   passthru('mv /usr/sbin/rclone /usr/bin/rclone');
 
+
+/**
+ * Resolve which rclone version should be installed.
+ */
+function pmssResolveRcloneVersion(): array
+{
+    $pinnedFile = '/etc/seedbox/config/app-versions/rclone';
+    $default = '1.69.1';
+
+    $pinned = trim((string)@file_get_contents($pinnedFile));
+    if ($pinned !== '' && $pinned[0] === 'v') {
+        $pinned = substr($pinned, 1);
+    }
+
+    $version = $pinned !== '' ? $pinned : $default;
+    $fetched = false;
+
+    if (getenv('PMSS_RCLONE_FETCH_LATEST') === '1') {
+        $latest = pmssFetchLatestRcloneVersion();
+        if ($latest !== null) {
+            $version = $latest;
+            $fetched = true;
+        }
+    }
+
+    pmssPersistRcloneVersion($pinnedFile, $version);
+    return [$version, $fetched];
+}
+
+/**
+ * Try to discover the newest rclone release without breaking when offline.
+ */
+function pmssFetchLatestRcloneVersion(): ?string
+{
+    $sources = [
+        'https://downloads.rclone.org/version.txt',
+        'https://rclone.org/downloads/',
+    ];
+    foreach ($sources as $url) {
+        $payload = @file_get_contents($url);
+        if ($payload === false) {
+            continue;
+        }
+        if (preg_match('/v?(\d+\.\d+\.\d+)/', $payload, $match)) {
+            return $match[1];
+        }
+    }
+    echo "Warning: Unable to determine latest rclone version, falling back to pinned release.\n";
+    return null;
+}
+
+/**
+ * Store the selected version for reproducible future runs.
+ */
+function pmssPersistRcloneVersion(string $file, string $version): void
+{
+    $dir = dirname($file);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0750, true);
+    }
+    @file_put_contents($file, $version.PHP_EOL);
+}
