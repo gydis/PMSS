@@ -1,7 +1,10 @@
 #!/usr/bin/php
 <?php
-# PMSS: Setting user traffic limits
-# Copyright (C) Magna Capax Finland Oy 2010-2023
+/**
+ * Configure per-user traffic limits from the command line.
+ *
+ * Usage: ./userTrafficLimit.php --user=<username> --limit=<MiB>
+ */
 # TODO Add per user max bandwidth limit
 # TODO Comment steps better
 # TODO Make common command variables parser which has more optional settings like --bandwidth 100M

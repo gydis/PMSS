@@ -1,6 +1,9 @@
 <?php
 /**
  * Lightweight CLI option parser shared by utility scripts.
+ *
+ * Provides shorthand helpers for parsing GNU-style long options, collapsed
+ * short flags, and retrieving option values with sensible defaults.
  */
 
 /**

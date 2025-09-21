@@ -3,23 +3,33 @@
 /**
  * PMSS Bootstrap Updater
  *
- * Usage examples:
- *   # /scripts/update.php
- *   # /scripts/update.php git/main:2025-05-11
- *   # /scripts/update.php git/main:2025-09-21 --dry-run
+ * Usage:
+ *   /scripts/update.php [<spec>] [--repo=<url>] [--branch=<name>] [--dry-run]
+ *   /scripts/update.php git/main                # current main branch
+ *   /scripts/update.php git/dev:2024-12-05      # branch pinned to a date
+ *   /scripts/update.php release:2025-07-12      # explicit tagged release
+ *   /scripts/update.php --repo=https://git/url.git --branch=beta
  *
- * Keep this file tiny and dependency-free. Its sole duties are:
- *   1. Fetch the requested PMSS snapshot (defaults to git/main)
- *   2. Copy the scripts/etc/var trees into place (unless --dry-run)
- *   3. Hand control to scripts/util/update-step2.php for the heavy work
+ * Responsibilities:
+ *   1. Fetch the requested snapshot of PMSS (defaults to git/main)
+ *   2. Copy the scripts/etc/var trees into place while keeping permissions tight
+ *   3. Delegate service configuration to scripts/util/update-step2.php
  *
- * Any new behaviour belongs in update-step2.php or later tooling so this
- * bootstrapper almost never needs to change.
+ * Keep this file dependency-free and minimal; all substantial logic belongs in
+ * update-step2.php so the bootstrap rarely needs changes.
  *
- * @author    Aleksi + Codex
+ * @author    Aleksi Ursin, Codex
  * @copyright Magna Capax Finland Oy 2010-2025
  */
+
 declare(strict_types=1);
+
+if (!function_exists('str_starts_with')) {
+    function str_starts_with(string $haystack, string $needle): bool
+    {
+        return $needle !== '' && strpos($haystack, $needle) === 0;
+    }
+}
 
 const DEFAULT_REPO  = 'https://github.com/MagnaCapax/PMSS';
 const CURL_UA       = 'PMSS-Updater (+https://pulsedmedia.com)';
@@ -32,9 +42,6 @@ const EXIT_FETCH    = 12;
 const EXIT_COPY     = 13;
 
 if (!function_exists('logmsg')) {
-    /**
-     * Minimal logger shared with update-step2.php when it is required later.
-     */
     function logmsg(string $message): void
     {
         $ts  = date('[Y-m-d H:i:s] ');
@@ -47,9 +54,6 @@ if (!function_exists('logmsg')) {
     }
 }
 
-/**
- * Append a JSON event for programmatic consumers.
- */
 function logJson(array $payload): void
 {
     $payload['ts'] = $payload['ts'] ?? date('c');
@@ -67,18 +71,13 @@ function logJson(array $payload): void
     }
 }
 
-/**
- * Emit an error and stop execution.
- */
 function fatal(string $message, int $code): void
 {
     logmsg('[ERROR] '.$message);
+    logJson(['event' => 'fatal', 'message' => $message, 'code' => $code]);
     exit($code);
 }
 
-/**
- * Guard against accidental execution as a non-root user.
- */
 function ensureRoot(): void
 {
     if (function_exists('posix_geteuid') && posix_geteuid() !== 0) {
@@ -86,9 +85,16 @@ function ensureRoot(): void
     }
 }
 
-/**
- * Execute a shell command and fail fast on error.
- */
+function usage(string $script): void
+{
+    echo "Usage: {$script} [<spec>] [--repo=<url>] [--branch=<name>] [--dry-run]\n";
+    echo "Examples:\n";
+    echo "  {$script}                      # update from git/main (default repo)\n";
+    echo "  {$script} git/dev:2025-01-03   # dev branch pinned to a date\n";
+    echo "  {$script} release:2025-07-12   # explicit release tag\n";
+    echo "  {$script} --repo=https://git/url.git --branch=beta\n";
+}
+
 function run(string $command, int $failureCode): void
 {
     logmsg('[RUN] '.$command);
@@ -98,21 +104,16 @@ function run(string $command, int $failureCode): void
     }
 }
 
-/**
- * Execute a best-effort command, logging any failure but continuing.
- */
 function runSoft(string $command): void
 {
     logmsg('[RUN] '.$command);
     passthru($command, $rc);
     if ($rc !== 0) {
         logmsg("[WARN] Command failed (rc={$rc}): {$command}");
+        logJson(['event' => 'command_warn', 'command' => $command, 'rc' => $rc]);
     }
 }
 
-/**
- * Create a temporary directory that holds the fetched snapshot.
- */
 function tmpdir(): string
 {
     $base = sys_get_temp_dir().'/pmss-update-'.bin2hex(random_bytes(4));
@@ -122,26 +123,16 @@ function tmpdir(): string
     return $base;
 }
 
-/**
- * Default to the main branch when no spec is supplied.
- */
 function defaultSpec(): string
 {
     return 'git/main';
 }
 
-/**
- * Normalise the user-supplied spec into a canonical representation.
- */
 function normaliseSpec(string $spec): string
 {
     $spec = trim($spec);
-    if ($spec === '') {
-        return '';
-    }
-    if (preg_match('/^(git|release)([\/:]).+/i', $spec)) {
-        return $spec;
-    }
+    if ($spec === '') return '';
+    if (preg_match('/^(git|release)([\/:]).+/i', $spec)) return $spec;
     if (preg_match('/^git\s+(.*)$/i', $spec, $m)) {
         $rest = str_replace(' ', '', $m[1]);
         return $rest === '' ? 'git/main' : 'git/'.$rest;
@@ -150,52 +141,36 @@ function normaliseSpec(string $spec): string
         $rest = trim($m[1]);
         return $rest === '' ? 'release' : 'release:'.$rest;
     }
-    if (preg_match('#^(https?|ssh)://#', $spec)) {
-        return 'git/'.$spec;
-    }
-    if (preg_match('/^[a-z0-9._\-]+$/i', $spec)) {
-        return 'git/'.$spec;
-    }
+    if (preg_match('#^(https?|ssh)://#', $spec)) return 'git/'.$spec;
+    if (preg_match('/^[a-z0-9._\-]+$/i', $spec)) return 'git/'.$spec;
     return '';
 }
 
-/**
- * Read the previously stored spec to preserve continuity.
- */
 function storedSpec(): string
 {
-    if (!file_exists(VERSION_FILE)) {
-        return '';
-    }
+    if (!file_exists(VERSION_FILE)) return '';
     $raw = trim((string)@file_get_contents(VERSION_FILE));
-    if ($raw === '') {
-        return '';
-    }
+    if ($raw === '') return '';
     if (strpos($raw, '@') !== false) {
         [$raw,] = explode('@', $raw, 2);
     }
     return trim($raw);
 }
 
-/**
- * Break a normalised spec into actionable components.
- */
 function parseSpec(string $spec): array
 {
     if (!preg_match('/^(git|release)([\/:])(.*)$/i', $spec, $m)) {
         fatal("Unable to parse source spec '{$spec}'", EXIT_PARSE);
     }
-
     $type = strtolower($m[1]);
     $rest = $m[3];
 
     if ($type === 'release') {
-        $tag = ltrim($rest, ':');
         return [
             'type'   => 'release',
             'repo'   => DEFAULT_REPO,
             'branch' => '',
-            'pin'    => $tag,
+            'pin'    => ltrim($rest, ':'),
         ];
     }
 
@@ -242,16 +217,10 @@ function parseSpec(string $spec): array
     ];
 }
 
-/**
- * Ask GitHub for the latest release tag.
- */
 function resolveLatestRelease(): string
 {
     $ctx = stream_context_create([
-        'http' => [
-            'user_agent' => CURL_UA,
-            'timeout'    => 10,
-        ],
+        'http' => ['user_agent' => CURL_UA, 'timeout' => 10],
     ]);
     $json = @file_get_contents('https://api.github.com/repos/MagnaCapax/PMSS/releases/latest', false, $ctx);
     if ($json === false) {
@@ -265,17 +234,13 @@ function resolveLatestRelease(): string
     return $tag;
 }
 
-/**
- * Download the requested snapshot into the temporary workspace.
- */
 function fetchSource(array $spec, string $tmp): void
 {
     if ($spec['type'] === 'release') {
         $tag = $spec['pin'] !== '' ? $spec['pin'] : resolveLatestRelease();
         $tar = $tmp.'/source.tgz';
         $url = 'https://api.github.com/repos/MagnaCapax/PMSS/tarball/'.rawurlencode($tag);
-        $cmd = sprintf(
-            'curl -sfL -A %s %s -o %s',
+        $cmd = sprintf('curl -sfL -A %s %s -o %s',
             escapeshellarg(CURL_UA),
             escapeshellarg($url),
             escapeshellarg($tar)
@@ -299,12 +264,10 @@ function fetchSource(array $spec, string $tmp): void
     }
 }
 
-/**
- * Ensure the snapshot has the minimum required files before copying.
- */
 function validateSnapshot(string $tmp): void
 {
     $required = [
+        $tmp.'/scripts',
         $tmp.'/scripts/update.php',
         $tmp.'/scripts/util/update-step2.php',
     ];
@@ -315,19 +278,12 @@ function validateSnapshot(string $tmp): void
     }
 }
 
-/**
- * Return true when a directory contains user-facing content beyond dot entries.
- */
 function hasContent(string $directory): bool
 {
     $handle = @opendir($directory);
-    if ($handle === false) {
-        return false;
-    }
+    if ($handle === false) return false;
     while (($entry = readdir($handle)) !== false) {
-        if ($entry === '.' || $entry === '..') {
-            continue;
-        }
+        if ($entry === '.' || $entry === '..') continue;
         closedir($handle);
         return true;
     }
@@ -335,9 +291,6 @@ function hasContent(string $directory): bool
     return false;
 }
 
-/**
- * Copy the fetched payload into place, skipping empty trees to stay fail-safe.
- */
 function copyPayload(string $tmp, bool $dryRun): void
 {
     validateSnapshot($tmp);
@@ -347,7 +300,7 @@ function copyPayload(string $tmp, bool $dryRun): void
             if (!is_dir('/scripts')) {
                 @mkdir('/scripts', 0755, true);
             }
-            run('cp -rp '.escapeshellarg($source.'/.').' /scripts', EXIT_COPY);
+            run('cp -rp '.escapeshellarg($source).'/. /scripts', EXIT_COPY);
         },
         'etc' => function (string $source) {
             run('cp -rpu '.escapeshellarg($source).' /', EXIT_COPY);
@@ -361,27 +314,23 @@ function copyPayload(string $tmp, bool $dryRun): void
         $source = $tmp.'/'.$name;
         if (!is_dir($source) || !hasContent($source)) {
             logmsg("[WARN] Snapshot {$name} tree missing or empty, skipping copy");
+            logJson(['event' => 'tree_skipped', 'tree' => $name]);
             continue;
         }
-
         if ($dryRun) {
             logmsg("[DRY RUN] Would copy {$name} from {$source}");
             continue;
         }
-
         $copyFn($source);
     }
 
     if (!$dryRun) {
         run('chmod -R o-rwx /scripts /root /etc/skel /etc/seedbox', EXIT_COPY);
-        normaliseScriptsLayout();
+        flattenScriptsLayout();
     }
 }
 
-/**
- * Collapse legacy /scripts/scripts layouts introduced by older updaters.
- */
-function normaliseScriptsLayout(): void
+function flattenScriptsLayout(): void
 {
     $nested = '/scripts/scripts';
     if (!is_dir($nested)) {
@@ -389,19 +338,16 @@ function normaliseScriptsLayout(): void
     }
     logmsg('Detected nested /scripts/scripts layout, flattening');
     logJson(['event' => 'scripts_flatten', 'action' => 'start']);
-    runSoft('cp -rp '.escapeshellarg($nested.'/.').' /scripts');
+    runSoft('cp -rp '.escapeshellarg($nested).'/. /scripts');
     runSoft('rm -rf '.escapeshellarg($nested));
     if (!file_exists('/scripts/util/update-step2.php')) {
-        logmsg('[WARN] update-step2.php still missing after flattening');
+        logmsg('[WARN] update-step2.php missing after flattening');
         logJson(['event' => 'scripts_flatten', 'status' => 'update_step2_missing']);
     } else {
         logJson(['event' => 'scripts_flatten', 'status' => 'ok']);
     }
 }
 
-/**
- * Persist the chosen spec and metadata so future runs can resume safely.
- */
 function recordVersion(string $versionSpec, array $meta, bool $dryRun): void
 {
     $timestamp = time();
@@ -421,27 +367,12 @@ function recordVersion(string $versionSpec, array $meta, bool $dryRun): void
     @file_put_contents(VERSION_META, json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
 }
 
-/**
- * Capture the commit hash from the staged git clone.
- */
 function collectCommitHash(string $tmp): string
 {
     $rev = @shell_exec('cd '.escapeshellarg($tmp).' && git rev-parse HEAD');
     return trim((string)$rev);
 }
 
-/**
- * Display a short usage helper.
- */
-function usage(string $script): void
-{
-    echo "Usage: {$script} [<source-spec>] [--dry-run]\n";
-    echo "Defaults to git/main when no spec is provided.\n";
-}
-
-/**
- * Clean up the temporary workspace without aborting the run.
- */
 function cleanupTemp(string $path): void
 {
     if ($path === '' || !is_dir($path)) {
@@ -450,16 +381,16 @@ function cleanupTemp(string $path): void
     runSoft('rm -rf '.escapeshellarg($path));
 }
 
-/**
- * Main control flow for the bootstrapper.
- */
 function runUpdater(array $argv): void
 {
     ensureRoot();
 
-    $startTime = microtime(true);
-    $dryRun    = false;
-    $specInput = '';
+    $startTime  = microtime(true);
+    $dryRun     = false;
+    $specInput  = '';
+    $specRepo   = null;
+    $specBranch = null;
+
     foreach (array_slice($argv, 1) as $arg) {
         if ($arg === '--help' || $arg === '-h') {
             usage($argv[0]);
@@ -469,10 +400,24 @@ function runUpdater(array $argv): void
             $dryRun = true;
             continue;
         }
+        if (str_starts_with($arg, '--repo=')) {
+            $specRepo = trim(substr($arg, strlen('--repo=')));
+            continue;
+        }
+        if (str_starts_with($arg, '--branch=')) {
+            $specBranch = trim(substr($arg, strlen('--branch=')));
+            continue;
+        }
         if ($specInput === '' && $arg !== '') {
             $specInput = $arg;
             continue;
         }
+    }
+
+    if (($specRepo ?? '') !== '' || ($specBranch ?? '') !== '') {
+        $repo   = $specRepo !== null && $specRepo !== '' ? $specRepo : DEFAULT_REPO;
+        $branch = $specBranch !== null && $specBranch !== '' ? $specBranch : 'main';
+        $specInput = 'git/'.$repo.':'.$branch;
     }
 
     if ($specInput === '') {
@@ -490,9 +435,12 @@ function runUpdater(array $argv): void
     $spec = parseSpec($normalised);
     logmsg('Source spec → '.json_encode($spec));
     logJson([
-        'event'    => 'update_start',
-        'spec'     => $normalised,
-        'dry_run'  => $dryRun,
+        'event'   => 'update_start',
+        'spec'    => $normalised,
+        'dry_run' => $dryRun,
+        'repo'    => $spec['repo'],
+        'branch'  => $spec['branch'],
+        'pin'     => $spec['pin'],
     ]);
 
     $tmp = tmpdir();
@@ -506,7 +454,8 @@ function runUpdater(array $argv): void
 
         $versionSpec = $spec['type'] === 'release'
             ? 'release'.($spec['pin'] !== '' ? ':'.$spec['pin'] : '')
-            : (($spec['repo'] === DEFAULT_REPO ? 'git/'.$spec['branch'] : 'git/'.$spec['repo'].':'.$spec['branch']).($spec['pin'] !== '' ? ':'.$spec['pin'] : ''));
+            : (($spec['repo'] === DEFAULT_REPO ? 'git/'.$spec['branch'] : 'git/'.$spec['repo'].':'.$spec['branch'])
+                .($spec['pin'] !== '' ? ':'.$spec['pin'] : ''));
 
         recordVersion($versionSpec, [
             'spec_input'      => $specInput,
@@ -530,11 +479,6 @@ function runUpdater(array $argv): void
         if ($code === 0) {
             $code = EXIT_COPY;
         }
-        logJson([
-            'event'   => 'update_failed',
-            'message' => $e->getMessage(),
-            'code'    => $code,
-        ]);
         fatal($e->getMessage(), $code);
     }
 
@@ -544,26 +488,19 @@ function runUpdater(array $argv): void
 
     if ($dryRun) {
         logmsg('Skipping update-step2.php (dry run)');
-        logJson([
-            'event'  => 'update_step2_skipped',
-            'reason' => 'dry_run',
-        ]);
+        logJson(['event' => 'update_step2_skipped', 'reason' => 'dry_run']);
     } elseif (!file_exists('/scripts/util/update-step2.php')) {
         logmsg('Skipping update-step2.php (file missing after copy)');
-        logJson([
-            'event'  => 'update_step2_skipped',
-            'reason' => 'missing',
-        ]);
+        logJson(['event' => 'update_step2_skipped', 'reason' => 'missing']);
     } else {
         logmsg('Handing off to update-step2.php');
         logJson(['event' => 'update_step2_start']);
         $step2Start = microtime(true);
         passthru(PHP_BINARY.' /scripts/util/update-step2.php', $rc);
         $step2Duration = round(microtime(true) - $step2Start, 3);
-        $step2Status = $rc === 0 ? 'ok' : 'error';
         logJson([
             'event'    => 'update_step2_end',
-            'status'   => $step2Status,
+            'status'   => $rc === 0 ? 'ok' : 'error',
             'rc'       => $rc,
             'duration' => $step2Duration,
         ]);
