@@ -323,7 +323,10 @@ function copyPayload(string $tmp, bool $dryRun): void
 
     $trees = [
         'scripts' => function (string $source) {
-            run('cp -rp '.escapeshellarg($source.'/')." /scripts", EXIT_COPY);
+            if (!is_dir('/scripts')) {
+                @mkdir('/scripts', 0755, true);
+            }
+            run('cp -rp '.escapeshellarg($source.'/.').' /scripts', EXIT_COPY);
         },
         'etc' => function (string $source) {
             run('cp -rpu '.escapeshellarg($source).' /', EXIT_COPY);
@@ -476,14 +479,16 @@ function runUpdater(array $argv): void
 
     cleanupTemp($tmp);
 
-    if (!$dryRun && file_exists('/scripts/util/update-step2.php')) {
+    if ($dryRun) {
+        logmsg('Skipping update-step2.php (dry run)');
+    } elseif (!file_exists('/scripts/util/update-step2.php')) {
+        logmsg('Skipping update-step2.php (file missing after copy)');
+    } else {
         logmsg('Handing off to update-step2.php');
         passthru(PHP_BINARY.' /scripts/util/update-step2.php', $rc);
         if ($rc !== 0) {
             fatal('update-step2.php exited with status '.$rc, $rc);
         }
-    } else {
-        logmsg('Skipping update-step2.php');
     }
 
     logmsg(($dryRun ? '[DRY RUN] ' : '').'Update completed');
