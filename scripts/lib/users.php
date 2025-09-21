@@ -1,49 +1,67 @@
 <?php
 
-class users {
+class users
+{
     const USERS_DB_FILE = '/etc/seedbox/runtime/users.json';
-    const LEGACY_DB_FILE = '/etc/seedbox/runtime/users';
     const SCHEMA_VERSION = 1;
 
-    var $users;
-    
-    public function __construct() {
-        $this->getUsers();  // sets directly to $this->users as well, so no need to set by return value here
+    private array $users = [];
+
+    public function __construct()
+    {
+        $this->getUsers();
     }
-    
-    public function __deconstruct() {
+
+    public function __destruct()
+    {
         $this->saveUsers();
     }
-    
-    public function getUsers() {
-        if (is_array($this->users)) return $this->users;
-        
-        $loaded = $this->loadFromJson(self::USERS_DB_FILE);
-        if ($loaded === null) {
-            $loaded = $this->migrateLegacyDatabase();
+
+    public function getUsers(): array
+    {
+        if (!empty($this->users)) {
+            return $this->users;
         }
+
+        $loaded = $this->loadFromJson(self::USERS_DB_FILE);
         $this->users = $loaded ?? [];
-        
+        $this->pruneStaleEntries();
         return $this->users;
     }
-    
-    public function addUser($username, $data) {
+
+    public function addUser(string $username, array $data): void
+    {
         if ($this->modifyUser($username, $data)) {
             $this->saveUsers();
         }
     }
-    
-    // Modify or add an user, works for both
-    public function modifyUser($username, $data) {
-        if (!$this->isValidUsername($username)) return false;
-        if (!$this->validateUserPayload($data)) return false;
+
+    public function modifyUser(string $username, array $data): bool
+    {
+        if (!$this->isValidUsername($username)) {
+            return false;
+        }
+        if (!$this->validateUserPayload($data)) {
+            return false;
+        }
 
         $this->users[$username] = $data;
         return true;
     }
-    
-    public function saveUsers() {
-        if (!is_array($this->users)) return false;
+
+    public function removeUser(string $username): void
+    {
+        if (isset($this->users[$username])) {
+            unset($this->users[$username]);
+            $this->saveUsers();
+        }
+    }
+
+    public function saveUsers(): bool
+    {
+        if (!is_array($this->users)) {
+            $this->users = [];
+        }
 
         $payload = [
             'schema'       => self::SCHEMA_VERSION,
@@ -69,13 +87,15 @@ class users {
         return true;
     }
 
-    /**
-     * Read the structured JSON user database from disk.
-     */
-    protected function loadFromJson(string $path): ?array {
-        if (!file_exists($path)) return null;
+    protected function loadFromJson(string $path): ?array
+    {
+        if (!file_exists($path)) {
+            return null;
+        }
         $raw = file_get_contents($path);
-        if ($raw === false || trim($raw) === '') return [];
+        if ($raw === false || trim($raw) === '') {
+            return [];
+        }
 
         $data = json_decode($raw, true);
         if (!is_array($data)) {
@@ -98,27 +118,24 @@ class users {
         return $data['users'];
     }
 
-    /**
-     * Import legacy serialized data and rewrite it using the JSON schema.
-     */
-    protected function migrateLegacyDatabase(): array
+    protected function pruneStaleEntries(): void
     {
-        if (!file_exists(self::LEGACY_DB_FILE)) {
-            return [];
+        if (empty($this->users)) {
+            return;
         }
-        $legacy = @unserialize(file_get_contents(self::LEGACY_DB_FILE));
-        if (!is_array($legacy)) {
-            error_log('users.php: Legacy user database corrupted.');
-            return [];
+        $homeUsers = self::listHomeUsers();
+        $changed = false;
+        foreach (array_keys($this->users) as $username) {
+            if (!in_array($username, $homeUsers, true)) {
+                unset($this->users[$username]);
+                $changed = true;
+            }
         }
-        $this->users = $legacy;
-        $this->saveUsers();
-        return $legacy;
+        if ($changed) {
+            $this->saveUsers();
+        }
     }
 
-    /**
-     * Stable checksum of the user list for corruption detection.
-     */
     protected function checksum(array $users): string
     {
         ksort($users);
@@ -131,17 +148,11 @@ class users {
         return sha1(json_encode($users, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
     }
 
-    /**
-     * Accept only safe account identifiers for persistence.
-     */
     protected function isValidUsername($username): bool
     {
         return is_string($username) && preg_match('/^[a-zA-Z0-9._-]+$/', $username);
     }
 
-    /**
-     * Confirm the minimum attribute set is present for each entry.
-     */
     protected function validateUserPayload($data): bool
     {
         if (!is_array($data)) return false;
@@ -154,9 +165,70 @@ class users {
         return true;
     }
 
+    public static function listHomeUsers(): array
+    {
+        $users = [];
+        $filterList = self::homeFilterList();
 
-    public static function systemUsers() {  // Get the users from the system rather than "db"
-        $filterList = array(
+        if ($directory = @opendir('/home')) {
+            while (false !== ($entry = readdir($directory))) {
+                if ($entry === '.' || $entry === '..') {
+                    continue;
+                }
+                if (strpos($entry, 'backup-') === 0) {
+                    continue;
+                }
+                if (in_array($entry, $filterList, true)) {
+                    continue;
+                }
+                $path = '/home/'.$entry;
+                if (is_dir($path)) {
+                    $users[$entry] = true;
+                }
+            }
+            closedir($directory);
+        }
+
+        foreach (self::passwdUsers() as $user) {
+            $users[$user] = true;
+        }
+
+        $names = array_keys($users);
+        sort($names, SORT_NATURAL | SORT_FLAG_CASE);
+        return $names;
+    }
+
+    protected static function passwdUsers(): array
+    {
+        $names = [];
+        $lines = @file('/etc/passwd', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if ($lines === false) {
+            return $names;
+        }
+        $filterList = self::homeFilterList();
+        foreach ($lines as $line) {
+            $parts = explode(':', $line);
+            if (count($parts) < 7) {
+                continue;
+            }
+            $name = $parts[0];
+            $home = $parts[5];
+            if (strpos($home, '/home/') !== 0) {
+                continue;
+            }
+            if (in_array($name, $filterList, true)) {
+                continue;
+            }
+            if (!isset($names[$name])) {
+                $names[$name] = true;
+            }
+        }
+        return array_keys($names);
+    }
+
+    protected static function homeFilterList(): array
+    {
+        return [
             'aquota.user',
             'aquota.group',
             'lost+found',
@@ -165,22 +237,7 @@ class users {
             'srvapi',
             'pmcseed',
             'pmcdn',
-            'srvmgmt'
-        );
-        $directory = opendir('/home');
-        if (!$directory) die('Fatal error with /home');
-
-        $users = array();
-        while(false !== ($file = readdir($directory))) {
-            if ($file[0] == '.') continue;
-            if (strpos($file, 'backup-') === 0) continue;   // skip backup directories
-            
-            if (!in_array($file, $filterList) &&
-                is_dir( '/home/' . $file) ) $users[] = $file;
-        }
-        return $users;
+            'srvmgmt',
+        ];
     }
-    
-    
-    
 }

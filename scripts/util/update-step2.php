@@ -16,6 +16,9 @@ require_once __DIR__.'/../lib/update.php';
 
 requireRoot();
 
+putenv('DEBIAN_FRONTEND=noninteractive');
+putenv('APT_LISTCHANGES_FRONTEND=none');
+
 
 // logmsg is defined in /scripts/update.php when this file is loaded from there.
 // Provide a very small fallback so running this script standalone won't fatal.
@@ -92,6 +95,13 @@ function runUserStep(string $user, string $description, string $command): int
     return runStep("[user:$user] $description", $command);
 }
 
+function aptCmd(string $args): string
+{
+    return 'DEBIAN_FRONTEND=noninteractive APT_LISTCHANGES_FRONTEND=none '
+        .'apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold '
+        .$args;
+}
+
 /**
  * Execute a series of commands under a shared description.
  */
@@ -162,7 +172,7 @@ if (strpos($updateSource, 'soft.sh') !== false) {
 // nodes come with broken defaults which can prevent spawning new processes.
 $fstab = file_get_contents('/etc/fstab');
 if (strpos($fstab, 'cgroup') === false) {   // Cgroups not installed
-    runStep('Ensuring cgroup-bin package present', 'apt-get install -y -q cgroup-bin');
+runStep('Ensuring cgroup-bin package present', aptCmd('install -y -q cgroup-bin'));
     $mount = "\ncgroup  /sys/fs/cgroup  cgroup  defaults  0   0\n";
     file_put_contents('/etc/fstab', $mount, FILE_APPEND);
     runStep('Mounting /sys/fs/cgroup', 'mount /sys/fs/cgroup');
@@ -214,7 +224,7 @@ updateAptSources(
     'logmsg'
 );
 
-runStep('Refreshing apt package index', 'apt update -y');
+runStep('Refreshing apt package index', aptCmd('update'));
 
 // Localnet file location fix -- this is very old TODO Remove say 09/2025
 if (file_exists('/etc/seedbox/localnet') && !file_exists('/etc/seedbox/config/localnet')) {

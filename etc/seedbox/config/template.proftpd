@@ -67,15 +67,7 @@ SystemLog                       /var/log/proftpd/proftpd.log
 </IfModule>
 
 <IfModule mod_tls.c>
-    TLSEngine                     on
-    TLSLog                        /var/log/proftpd/tls.log
-    TLSProtocol                   SSLv23
-    TLSOptions                    NoSessionReuseRequired
-    TLSRSACertificateFile         "/etc/letsencrypt/live/le4-0-76-80pendleton.pulsedmedia.com/cert.pem"
-    TLSRSACertificateKeyFile      "/etc/letsencrypt/live/le4-0-76-80pendleton.pulsedmedia.com/privkey.pem"
-    TLSCACertificateFile          "/etc/letsencrypt/live/le4-0-76-80pendleton.pulsedmedia.com/fullchain.pem"
-    TLSVerifyClient               off
-    TLSRequired                   off
+%TLS_CONFIGURATION%
 </IfModule>
 
 AllowStoreRestart on

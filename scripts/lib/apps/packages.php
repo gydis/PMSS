@@ -1,8 +1,10 @@
 <?php
-# Pulsed Media Seedbox Management Software "PMSS"
-# Install / Manage apt packages
+/**
+ * Install / manage apt packages required by PMSS deployments.
+ */
 
-
+putenv('DEBIAN_FRONTEND=noninteractive');
+putenv('APT_LISTCHANGES_FRONTEND=none');
 
 #TODO dpkg get sel set sel | ... 
 #TODO Move out of this directory so we can just glob everything here.
@@ -117,5 +119,4 @@ passthru('apt-get install expect -y');
 
 if (!file_exists('/sbin/ipset'))
     passthru('apt-get install ipset -y');   #IPSet is required for Firehol
-
 

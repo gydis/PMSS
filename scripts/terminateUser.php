@@ -1,5 +1,6 @@
 #!/usr/bin/php
 <?php
+require_once __DIR__.'/lib/users.php';
 $continue = '-';
 
 $usage = "Usage: terminateUser.php USERNAME\n";
@@ -76,7 +77,10 @@ passthru("userdel {$username}; groupdel {$username};"); // If during first attem
 passthru("rm -rf /var/run/screen/S-{$username}");
 passthru("rm -rf /home/{$username} /etc/nginx/users/{$username}");
 passthru("/scripts/util/portManager.php release {$username} lighttpd");
-unlink("/etc/nginx/users/{$username}");
+@unlink("/etc/nginx/users/{$username}");
+
+$db = new users();
+$db->removeUser($username);
 
 // If attemps 1 and 2 failed ...
 passthru("killall -9 -u {$username}");
