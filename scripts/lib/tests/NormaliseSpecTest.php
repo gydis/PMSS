@@ -39,6 +39,6 @@ class NormaliseSpecTest extends TestCase
 
     public function testDefaultSpecFormat(): void
     {
-        $this->assertMatches('/^git\\/main:\\d{4}-\\d{2}-\\d{2}$/', \defaultSpec());
+        $this->assertEquals('git/main', \defaultSpec());
     }
 }

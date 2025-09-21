@@ -24,10 +24,12 @@ class Logger {
  *   $log = new Logger(__FILE__);
  *   $log->msg('text');
  */
-function logmsg(string $m): void {
-    global $logmsg_default_logger;
-    if (!isset($logmsg_default_logger)) {
-        $logmsg_default_logger = new Logger($_SERVER['SCRIPT_NAME'] ?? __FILE__);
+if (!function_exists('logmsg')) {
+    function logmsg(string $m): void {
+        global $logmsg_default_logger;
+        if (!isset($logmsg_default_logger)) {
+            $logmsg_default_logger = new Logger($_SERVER['SCRIPT_NAME'] ?? __FILE__);
+        }
+        $logmsg_default_logger->msg($m);
     }
-    $logmsg_default_logger->msg($m);
 }
