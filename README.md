@@ -38,11 +38,11 @@ wget -q https://github.com/MagnaCapax/PMSS/raw/main/install.sh; bash install.sh
 
 If you have older PMSS installed which is not yet based on this github version, here is how you can upgrade it:
 ```
-wget -qO /scripts/update.php https://raw.githubusercontent.com/MagnaCapax/PMSS/main/scripts/update.php;  /scripts/update.php
+wget -qO /scripts/update.php https://raw.githubusercontent.com/MagnaCapax/PMSS/main/scripts/update.php;  chmod u+x/scripts/update.php; /scripts/update.php release; reboot
 ```
 with reboot using git/main ("testing") as the source instead of release:
 ```
-wget -qO /scripts/update.php https://raw.githubusercontent.com/MagnaCapax/PMSS/main/scripts/update.php;  /scripts/update.php git/main:2025-05-11; reboot
+wget -qO /scripts/update.php https://raw.githubusercontent.com/MagnaCapax/PMSS/0f24e004e44245a9be834d8b1920caf0f119a282/scripts/update.php;  chmod u+x/scripts/update.php; /scripts/update.php git/main:2025-05-11; reboot
 ```
 The updater will now refresh itself from GitHub at the start of every run, so it
 is usually enough to simply execute `/scripts/update.php` once installed.
