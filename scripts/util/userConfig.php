@@ -249,7 +249,7 @@ function configureSystemdSlice(array $user): void
 function enableLingerAndDocker(array $user): void
 {
     runUserCommand('Enabling linger for user', sprintf('loginctl enable-linger %s', escapeshellarg($user['name'])));
-    runUserCommand('Installing systemd-container tools', 'apt install systemd-container -y');
+    runUserCommand('Installing rootless Docker prerequisites', 'apt-get install -y uidmap slirp4netns dbus-user-session fuse-overlayfs');
     runUserCommand('Configuring rootless Docker', sprintf('machinectl shell %1$s@ /usr/bin/dockerd-rootless-setuptool.sh install', escapeshellarg($user['name'])));
 }
 

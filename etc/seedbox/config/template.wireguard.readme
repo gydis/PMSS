@@ -1,0 +1,31 @@
+WireGuard server ready
+======================
+
+Server host: %HOSTNAME% (%ENDPOINT%)
+Public key:  %PUBLIC_KEY%
+Listen port: %LISTEN_PORT%
+Internal subnet: 10.90.90.0/24
+Recommended MTU: 1420
+
+Client quick start (Linux/macOS)
+--------------------------------
+  umask 077
+  wg genkey | tee private.key | wg pubkey > public.key
+  # send public.key to the administrator for inclusion in wg0.conf
+
+Client configuration template
+-----------------------------
+[Interface]
+PrivateKey = <client private key>
+Address = 10.90.90.X/32
+MTU = 1420
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = %PUBLIC_KEY%
+Endpoint = %ENDPOINT%:%LISTEN_PORT%
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25
+
+Enable on the server after adding peers:
+  systemctl enable --now wg-quick@wg0

@@ -24,7 +24,17 @@ class users
         }
 
         $loaded = $this->loadFromJson(self::USERS_DB_FILE);
-        $this->users = $loaded ?? [];
+        if ($loaded === null) {
+            $loaded = [];
+        }
+        $this->users = $loaded;
+
+        if (empty($this->users)) {
+            foreach (self::listHomeUsers() as $user) {
+                $this->users[$user] = [];
+            }
+        }
+
         $this->pruneStaleEntries();
         return $this->users;
     }
@@ -118,22 +128,28 @@ class users
         return $data['users'];
     }
 
-    protected function pruneStaleEntries(): void
+    public function prune(): int
+    {
+        return $this->pruneStaleEntries();
+    }
+
+    protected function pruneStaleEntries(bool $autoSave = true): int
     {
         if (empty($this->users)) {
-            return;
+            return 0;
         }
         $homeUsers = self::listHomeUsers();
-        $changed = false;
+        $removed = 0;
         foreach (array_keys($this->users) as $username) {
             if (!in_array($username, $homeUsers, true)) {
                 unset($this->users[$username]);
-                $changed = true;
+                $removed++;
             }
         }
-        if ($changed) {
+        if ($removed > 0 && $autoSave) {
             $this->saveUsers();
         }
+        return $removed;
     }
 
     protected function checksum(array $users): string
@@ -165,12 +181,17 @@ class users
         return true;
     }
 
-    public static function listHomeUsers(): array
+    public static function listHomeDirectories(): array
     {
         $users = [];
         $filterList = self::homeFilterList();
 
-        if ($directory = @opendir('/home')) {
+        $directory = @opendir('/home');
+        if ($directory === false) {
+            error_log('users.php: Unable to open /home for enumeration.');
+            return [];
+        }
+        try {
             while (false !== ($entry = readdir($directory))) {
                 if ($entry === '.' || $entry === '..') {
                     continue;
@@ -178,27 +199,23 @@ class users
                 if (strpos($entry, 'backup-') === 0) {
                     continue;
                 }
+                $path = '/home/'.$entry;
                 if (in_array($entry, $filterList, true)) {
                     continue;
                 }
-                $path = '/home/'.$entry;
                 if (is_dir($path)) {
                     $users[$entry] = true;
                 }
             }
+        } finally {
             closedir($directory);
         }
-
-        foreach (self::passwdUsers() as $user) {
-            $users[$user] = true;
-        }
-
         $names = array_keys($users);
         sort($names, SORT_NATURAL | SORT_FLAG_CASE);
         return $names;
     }
 
-    protected static function passwdUsers(): array
+    public static function listPasswdUsers(): array
     {
         $names = [];
         $lines = @file('/etc/passwd', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -223,7 +240,9 @@ class users
                 $names[$name] = true;
             }
         }
-        return array_keys($names);
+        $result = array_keys($names);
+        sort($result, SORT_NATURAL | SORT_FLAG_CASE);
+        return $result;
     }
 
     protected static function homeFilterList(): array
@@ -239,5 +258,16 @@ class users
             'pmcdn',
             'srvmgmt',
         ];
+    }
+
+    public static function listHomeUsers(): array
+    {
+        $combined = array_fill_keys(self::listHomeDirectories(), true);
+        foreach (self::listPasswdUsers() as $user) {
+            $combined[$user] = true;
+        }
+        $names = array_keys($combined);
+        sort($names, SORT_NATURAL | SORT_FLAG_CASE);
+        return $names;
     }
 }

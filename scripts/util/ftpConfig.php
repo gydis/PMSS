@@ -14,11 +14,14 @@ if ($configTemplate === false || $hostnameRaw === false) {
 }
 
 $hostname = trim($hostnameRaw);
-$rendered = str_replace(
-    ['%SERVERNAME%', '%TLS_CONFIGURATION%'],
-    [$hostname, buildTlsConfiguration($hostname)],
-    $configTemplate
-);
+$tlsBlock = buildTlsConfiguration($hostname);
+$rendered = str_replace('%SERVERNAME%', $hostname, $configTemplate);
+
+if ($tlsBlock === '') {
+    $rendered = preg_replace('#\n?<IfModule mod_tls\.c>.*?</IfModule>#s', '', $rendered);
+} else {
+    $rendered = str_replace('%TLS_CONFIGURATION%', $tlsBlock, $rendered);
+}
 
 @mkdir('/var/log/proftpd', 0750, true);
 @mkdir('/var/run/proftpd', 0750, true);
@@ -26,9 +29,13 @@ $rendered = str_replace(
 file_put_contents('/etc/proftpd/proftpd.conf', $rendered);
 
 if (is_dir('/run/systemd/system')) {
-    passthru('systemctl restart proftpd');
+    passthru('systemctl restart proftpd', $rc);
 } else {
-    passthru('/etc/init.d/proftpd restart');
+    passthru('/etc/init.d/proftpd restart', $rc);
+}
+
+if (($rc ?? 0) !== 0) {
+    fwrite(STDERR, "Warning: ProFTPD restart returned code {$rc}.\n");
 }
 
 function buildTlsConfiguration(string $hostname): string
@@ -62,5 +69,5 @@ function buildTlsConfiguration(string $hostname): string
         }
     }
 
-    return "    # TLS disabled - certificate bundle not available\n    TLSEngine                     off";
+    return '';
 }

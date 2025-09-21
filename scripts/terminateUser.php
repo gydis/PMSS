@@ -80,7 +80,11 @@ passthru("/scripts/util/portManager.php release {$username} lighttpd");
 @unlink("/etc/nginx/users/{$username}");
 
 $db = new users();
-$db->removeUser($username);
+if (function_exists('posix_getpwnam') && posix_getpwnam($username) !== false) {
+    fwrite(STDERR, "Warning: {$username} still present in /etc/passwd; skipping DB removal.\n");
+} else {
+    $db->removeUser($username);
+}
 
 // If attemps 1 and 2 failed ...
 passthru("killall -9 -u {$username}");

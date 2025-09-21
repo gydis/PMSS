@@ -22,97 +22,10 @@ if (file_exists('/etc/seedbox/config/localnet')) {
 
 require_once '/scripts/lib/networkInfo.php';
 require_once '/scripts/lib/runtime.php';
+require_once __DIR__.'/../lib/net/iptables.php';
 if (!isset($link) or empty($link)) die("Error: Could not get interfaces information\n");
 
-/**
- * Execute an iptables rule and log the command.
- *
- * @param string $rule arguments for iptables binary
- */
-function runIptables($rule)
-{
-    $cmd = "/sbin/iptables $rule";
-    echo "Executing: $cmd\n";
-    exec($cmd, $out, $ret);
-    if ($ret !== 0) {
-        file_put_contents('/var/log/pmss/iptables.log', date('c') . " ERROR $cmd\n", FILE_APPEND);
-    }
-}
-/**
- * Convert monitoring helper output into bare iptables commands.
- */
-function parseMonitoringCommands(string $raw): array
-{
-    if ($raw === '') return [];
-    $commands = [];
-    foreach (explode("\n", trim($raw)) as $line) {
-        $line = trim(preg_replace('/^\/?sbin\/iptables\s+/', '', $line));
-        if ($line === '' || strpos($line, '-F') === 0) continue;
-        $commands[] = $line;
-    }
-    return $commands;
-}
-
-/**
- * Render rules to a temp file and try iptables-restore for an atomic update.
- */
-function applyIptablesAtomically(array $filterCommands, array $natCommands): bool
-{
-    $sections = [];
-    if ($filterCommands) {
-        $filter = [
-            '*filter',
-            ':INPUT ACCEPT [0:0]',
-            ':FORWARD ACCEPT [0:0]',
-            ':OUTPUT ACCEPT [0:0]',
-        ];
-        foreach ($filterCommands as $cmd) {
-            $filter[] = $cmd;
-        }
-        $filter[] = 'COMMIT';
-        $sections[] = implode("\n", $filter);
-    }
-    if ($natCommands) {
-        $nat = ['*nat', ':PREROUTING ACCEPT [0:0]', ':INPUT ACCEPT [0:0]', ':OUTPUT ACCEPT [0:0]', ':POSTROUTING ACCEPT [0:0]'];
-        foreach ($natCommands as $cmd) {
-            $nat[] = $cmd;
-        }
-        $nat[] = 'COMMIT';
-        $sections[] = implode("\n", $nat);
-    }
-
-    $data = implode("\n", $sections) . "\n";
-    $tmp = tempnam(sys_get_temp_dir(), 'pmss-iptables-');
-    file_put_contents($tmp, $data);
-    $command = sprintf('sh -c %s', escapeshellarg('iptables-restore < ' . escapeshellarg($tmp)));
-    $result = runCommand($command, false, 'logMessage');
-    unlink($tmp);
-    return $result === 0;
-}
-
-/**
- * Sequentially apply rules when iptables-restore is unavailable.
- */
-function applyIptablesFallback(array $filterCommands, array $natCommands, array $replacements): void
-{
-    runIptables('-F INPUT');
-    runIptables('-F FORWARD');
-    runIptables('-F OUTPUT');
-    runIptables('-t nat -F POSTROUTING');
-    foreach ($filterCommands as $cmd) {
-        runIptables(str_replace(array_keys($replacements), array_values($replacements), $cmd));
-    }
-    foreach ($natCommands as $cmd) {
-        $rendered = str_replace(array_keys($replacements), array_values($replacements), $cmd);
-        if (strpos($rendered, '-t nat') !== 0) {
-            runIptables('-t nat ' . $rendered);
-        } else {
-            runIptables($rendered);
-        }
-    }
-}
-
-$monitoringCommands = parseMonitoringCommands(shell_exec('/scripts/util/makeMonitoringRules.php') ?: '');
+$monitoringCommands = iptablesParseMonitoring(shell_exec('/scripts/util/makeMonitoringRules.php') ?: '');
 $replacements = [
     '##IFACE##' => $networkConfig['interface'],
     '##LINK##'  => $link
@@ -144,18 +57,23 @@ $tcpsackRules = [
 
 $inputRules = [
     '-A INPUT -i ##IFACE## -m state --state NEW -p udp --dport 1194 -j ACCEPT',
-    '-A INPUT -i tun+ -j ACCEPT'
+    '-A INPUT -i ##IFACE## -m state --state NEW -p udp --dport 51820 -j ACCEPT',
+    '-A INPUT -i tun+ -j ACCEPT',
+    '-A INPUT -i wg+ -j ACCEPT'
 ];
 
 $forwardRules = [
     '-A FORWARD -i tun+ -o tun+ -j DROP',
     '-A FORWARD -i tun+ -j ACCEPT',
     '-A FORWARD -i tun+ -o ##IFACE## -m state --state RELATED,ESTABLISHED -j ACCEPT',
-    '-A FORWARD -i ##IFACE## -o tun+ -m state --state RELATED,ESTABLISHED -j ACCEPT'
+    '-A FORWARD -i ##IFACE## -o tun+ -m state --state RELATED,ESTABLISHED -j ACCEPT',
+    '-A FORWARD -i wg+ -o ##IFACE## -j ACCEPT',
+    '-A FORWARD -i ##IFACE## -o wg+ -m state --state RELATED,ESTABLISHED -j ACCEPT'
 ];
 
 $outputRules = [
-    '-A OUTPUT -o tun+ -j ACCEPT'
+    '-A OUTPUT -o tun+ -j ACCEPT',
+    '-A OUTPUT -o wg+ -j ACCEPT'
 ];
 
 foreach ($tcpsackRules as $rule) {
@@ -183,7 +101,8 @@ foreach ($outputRules as $rule) {
 $filterCommands = array_merge($filterCommands, $monitoringCommands);
 
 $natCommands = [
-    '-A POSTROUTING -s 10.8.0.0/24 -o ##LINK## -j MASQUERADE'
+    '-A POSTROUTING -s 10.8.0.0/24 -o ##LINK## -j MASQUERADE',
+    '-A POSTROUTING -s 10.90.90.0/24 -o ##LINK## -j MASQUERADE'
 ];
 
 file_put_contents('/proc/sys/net/ipv4/ip_forward', '1');
@@ -195,9 +114,9 @@ $renderedNat = array_map(function ($cmd) use ($replacements) {
     return str_replace(array_keys($replacements), array_values($replacements), $cmd);
 }, $natCommands);
 
-if (!applyIptablesAtomically($renderedFilter, $renderedNat)) {
+if (!iptablesApplyAtomically($renderedFilter, $renderedNat)) {
     logMessage('iptables-restore failed, falling back to sequential rules');
-    applyIptablesFallback($filterCommands, $natCommands, $replacements);
+    iptablesApplyFallback($filterCommands, $natCommands, $replacements);
 }
 
 #TODO We could use a ban list here for ssh brute force attempts etc.

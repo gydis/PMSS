@@ -12,3 +12,17 @@ Docker daemon running:
 ```
 
 Add this line to the root crontab if it is not present.
+
+WireGuard health check (`checkWireguard.php`) reloads the kernel module if needed
+and restarts `wg-quick@wg0` when required:
+
+```
+*/5 * * * * root /scripts/cron/checkWireguard.php >> /var/log/pmss/checkWireguard.log 2>&1
+```
+
+User database cleanup (`cleanupUserDb.php`) prunes stale entries from
+`/etc/seedbox/runtime/users.json` every night:
+
+```
+30 2 * * * root /scripts/cron/cleanupUserDb.php >> /var/log/pmss/userDbCleanup.log 2>&1
+```

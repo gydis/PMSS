@@ -12,6 +12,10 @@ CPU: %SERVER_CPU% with %SERVER_RAM% RAM
 STORAGE: %SERVER_STORAGE%
 Network Speed: %NETWORK_SPEED%
 
+VPN Services:
+  WireGuard: %WIREGUARD_STATUS%
+  OpenVPN:   %OPENVPN_STATUS%
+
 
 PMSS Version: %PMSS_VERSION%
 Runtime Version: %RUN_VERSION%
@@ -31,5 +35,4 @@ List Containts Running; `docker ps`
 Restart Docker: `systemctl --user restart docker`
 For usage tips run `docker-help`. The daemon is monitored by a cron job to
 ensure it stays running.
-
 
