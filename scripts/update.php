@@ -6,7 +6,7 @@
  * Usage examples:
  *   # /scripts/update.php
  *   # /scripts/update.php git/main:2025-05-11
- *   # /scripts/update.php git/dev:2024-12-05 --dry-run
+ *   # /scripts/update.php git/main:2025-09-21 --dry-run
  *
  * Keep this file tiny and dependency-free. Its sole duties are:
  *   1. Fetch the requested PMSS snapshot (defaults to git/main)
@@ -16,8 +16,8 @@
  * Any new behaviour belongs in update-step2.php or later tooling so this
  * bootstrapper almost never needs to change.
  *
- * @author    Magna Capax Finland Oy
- * @copyright Magna Capax Finland Oy 2010-2024
+ * @author    Aleksi + Codex
+ * @copyright Magna Capax Finland Oy 2010-2025
  */
 declare(strict_types=1);
 
@@ -374,6 +374,28 @@ function copyPayload(string $tmp, bool $dryRun): void
 
     if (!$dryRun) {
         run('chmod -R o-rwx /scripts /root /etc/skel /etc/seedbox', EXIT_COPY);
+        normaliseScriptsLayout();
+    }
+}
+
+/**
+ * Collapse legacy /scripts/scripts layouts introduced by older updaters.
+ */
+function normaliseScriptsLayout(): void
+{
+    $nested = '/scripts/scripts';
+    if (!is_dir($nested)) {
+        return;
+    }
+    logmsg('Detected nested /scripts/scripts layout, flattening');
+    logJson(['event' => 'scripts_flatten', 'action' => 'start']);
+    runSoft('cp -rp '.escapeshellarg($nested.'/.').' /scripts');
+    runSoft('rm -rf '.escapeshellarg($nested));
+    if (!file_exists('/scripts/util/update-step2.php')) {
+        logmsg('[WARN] update-step2.php still missing after flattening');
+        logJson(['event' => 'scripts_flatten', 'status' => 'update_step2_missing']);
+    } else {
+        logJson(['event' => 'scripts_flatten', 'status' => 'ok']);
     }
 }
 
