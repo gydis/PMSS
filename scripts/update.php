@@ -26,6 +26,7 @@ const CURL_UA       = 'PMSS-Updater (+https://pulsedmedia.com)';
 const VERSION_DIR   = '/etc/seedbox/config';
 const VERSION_FILE  = VERSION_DIR.'/version';
 const VERSION_META  = VERSION_DIR.'/version.meta';
+const JSON_LOG      = '/var/log/pmss-update.jsonl';
 const EXIT_PARSE    = 11;
 const EXIT_FETCH    = 12;
 const EXIT_COPY     = 13;
@@ -43,6 +44,26 @@ if (!function_exists('logmsg')) {
         @file_put_contents($log, $ts.$message.PHP_EOL, FILE_APPEND | LOCK_EX)
      || @file_put_contents($alt, $ts.$message.PHP_EOL, FILE_APPEND | LOCK_EX);
         fwrite(STDOUT, $message.PHP_EOL);
+    }
+}
+
+/**
+ * Append a JSON event for programmatic consumers.
+ */
+function logJson(array $payload): void
+{
+    $payload['ts'] = $payload['ts'] ?? date('c');
+    $dir = dirname(JSON_LOG);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    $encoded = json_encode($payload, JSON_UNESCAPED_SLASHES);
+    if ($encoded === false) {
+        return;
+    }
+    @file_put_contents(JSON_LOG, $encoded.PHP_EOL, FILE_APPEND | LOCK_EX);
+    if (file_exists(JSON_LOG)) {
+        @chmod(JSON_LOG, 0640);
     }
 }
 
@@ -414,6 +435,7 @@ function runUpdater(array $argv): void
 {
     ensureRoot();
 
+    $startTime = microtime(true);
     $dryRun    = false;
     $specInput = '';
     foreach (array_slice($argv, 1) as $arg) {
@@ -445,6 +467,11 @@ function runUpdater(array $argv): void
 
     $spec = parseSpec($normalised);
     logmsg('Source spec → '.json_encode($spec));
+    logJson([
+        'event'    => 'update_start',
+        'spec'     => $normalised,
+        'dry_run'  => $dryRun,
+    ]);
 
     $tmp = tmpdir();
 
@@ -468,30 +495,70 @@ function runUpdater(array $argv): void
             'pin'             => $spec['pin'],
             'commit'          => $spec['commit'] ?? '',
         ], $dryRun);
+
+        logJson([
+            'event'        => 'snapshot_applied',
+            'version_spec' => $versionSpec,
+            'commit'       => $spec['commit'] ?? '',
+            'dry_run'      => $dryRun,
+        ]);
     } catch (\Throwable $e) {
         cleanupTemp($tmp);
         $code = (int)$e->getCode();
         if ($code === 0) {
             $code = EXIT_COPY;
         }
+        logJson([
+            'event'   => 'update_failed',
+            'message' => $e->getMessage(),
+            'code'    => $code,
+        ]);
         fatal($e->getMessage(), $code);
     }
 
     cleanupTemp($tmp);
 
+    putenv('PMSS_JSON_LOG='.JSON_LOG);
+
     if ($dryRun) {
         logmsg('Skipping update-step2.php (dry run)');
+        logJson([
+            'event'  => 'update_step2_skipped',
+            'reason' => 'dry_run',
+        ]);
     } elseif (!file_exists('/scripts/util/update-step2.php')) {
         logmsg('Skipping update-step2.php (file missing after copy)');
+        logJson([
+            'event'  => 'update_step2_skipped',
+            'reason' => 'missing',
+        ]);
     } else {
         logmsg('Handing off to update-step2.php');
+        logJson(['event' => 'update_step2_start']);
+        $step2Start = microtime(true);
         passthru(PHP_BINARY.' /scripts/util/update-step2.php', $rc);
+        $step2Duration = round(microtime(true) - $step2Start, 3);
+        $step2Status = $rc === 0 ? 'ok' : 'error';
+        logJson([
+            'event'    => 'update_step2_end',
+            'status'   => $step2Status,
+            'rc'       => $rc,
+            'duration' => $step2Duration,
+        ]);
         if ($rc !== 0) {
             fatal('update-step2.php exited with status '.$rc, $rc);
         }
     }
 
-    logmsg(($dryRun ? '[DRY RUN] ' : '').'Update completed');
+    $totalDuration = round(microtime(true) - $startTime, 3);
+    $prefix = $dryRun ? '[DRY RUN] ' : '';
+    logmsg($prefix.'Update completed in '.$totalDuration.'s');
+    logJson([
+        'event'    => 'update_complete',
+        'status'   => 'ok',
+        'dry_run'  => $dryRun,
+        'duration' => $totalDuration,
+    ]);
 }
 
 if (basename(__FILE__) === basename($_SERVER['SCRIPT_FILENAME'] ?? '')) {
