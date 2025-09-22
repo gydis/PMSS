@@ -20,6 +20,7 @@ putenv('DEBIAN_FRONTEND=noninteractive');
 putenv('APT_LISTCHANGES_FRONTEND=none');
 putenv('UCF_FORCE_CONFOLD=1');
 putenv('UCF_FORCE_CONFNEW=0');
+putenv('UCF_FORCE_CONFDEF=1');
 putenv('NEEDRESTART_MODE=a');
 
 
@@ -98,6 +99,9 @@ if ($existingAptConfig === false || trim($existingAptConfig) !== trim($aptNonInt
 } else {
     logmsg('[SKIP] apt non-interactive configuration already up to date');
 }
+
+// Finish any interrupted package configuration before continuing.
+runStep('Completing pending dpkg configuration', 'dpkg --configure -a');
 
 function pmssRecordProfile(array $entry): void
 {

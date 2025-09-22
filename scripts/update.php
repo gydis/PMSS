@@ -18,6 +18,9 @@
  * Keep this file dependency-free and minimal; all substantial logic belongs in
  * update-step2.php so the bootstrap rarely needs changes.
  *
+ * NOTE: Keep bootstrap semantics stable—coordinate before modifying self-update
+ *       behaviour or copy/install sequence.
+ *
  * @author    Aleksi Ursin, Codex
  * @copyright Magna Capax Finland Oy 2010-2025
  */
@@ -31,16 +34,17 @@ if (!function_exists('str_starts_with')) {
     }
 }
 
-const DEFAULT_REPO  = 'https://github.com/MagnaCapax/PMSS';
-const CURL_UA       = 'PMSS-Updater (+https://pulsedmedia.com)';
-const VERSION_DIR   = '/etc/seedbox/config';
-const VERSION_FILE  = VERSION_DIR.'/version';
-const VERSION_META  = VERSION_DIR.'/version.meta';
-const JSON_LOG      = '/var/log/pmss-update.jsonl';
-const EXIT_PARSE    = 11;
-const EXIT_FETCH    = 12;
-const EXIT_COPY     = 13;
-const EXIT_DIST     = 14;
+const DEFAULT_REPO          = 'https://github.com/MagnaCapax/PMSS';
+const CURL_UA               = 'PMSS-Updater (+https://pulsedmedia.com)';
+const VERSION_DIR           = '/etc/seedbox/config';
+const VERSION_FILE          = VERSION_DIR.'/version';
+const VERSION_META          = VERSION_DIR.'/version.meta';
+const JSON_LOG              = '/var/log/pmss-update.jsonl';
+const EXIT_PARSE            = 11;
+const EXIT_FETCH            = 12;
+const EXIT_COPY             = 13;
+const EXIT_DIST             = 14;
+const SELF_UPDATE_SKIP_FLAG = '--skip-self-update';
 
 if (!function_exists('logmsg')) {
     function logmsg(string $message): void
@@ -79,6 +83,12 @@ function fatal(string $message, int $code): void
     exit($code);
 }
 
+function currentUpdaterHash(): string
+{
+    $hash = @hash_file('sha256', __FILE__);
+    return $hash === false ? '' : $hash;
+}
+
 function ensureRoot(): void
 {
     if (function_exists('posix_geteuid') && posix_geteuid() !== 0) {
@@ -95,6 +105,8 @@ function usage(string $script): void
     echo "  {$script} release:2025-07-12   # explicit release tag\n";
     echo "  {$script} --repo=https://git/url.git --branch=beta\n";
     echo "  {$script} --dist-upgrade            # run Debian release upgrade helper\n";
+    echo "\nInternal flags:\n";
+    echo "  " . SELF_UPDATE_SKIP_FLAG . "           # internal: skip self-update rerun\n";
 }
 
 function run(string $command, int $failureCode): void
@@ -390,9 +402,11 @@ function runUpdater(array $argv): void
     $startTime  = microtime(true);
     $dryRun     = false;
     $distUpgrade = false;
+    $skipSelfUpdate = false;
     $specInput  = '';
     $specRepo   = null;
     $specBranch = null;
+    $originalHash = currentUpdaterHash();
 
     foreach (array_slice($argv, 1) as $arg) {
         if ($arg === '--help' || $arg === '-h') {
@@ -405,6 +419,10 @@ function runUpdater(array $argv): void
         }
         if ($arg === '--dist-upgrade') {
             $distUpgrade = true;
+            continue;
+        }
+        if ($arg === SELF_UPDATE_SKIP_FLAG) {
+            $skipSelfUpdate = true;
             continue;
         }
         if (str_starts_with($arg, '--repo=')) {
@@ -495,6 +513,39 @@ function runUpdater(array $argv): void
     }
 
     cleanupTemp($tmp);
+
+    $updatedHash = currentUpdaterHash();
+    if (!$dryRun && !$skipSelfUpdate && $originalHash !== '' && $updatedHash !== '' && $updatedHash !== $originalHash) {
+        logmsg('update.php changed during snapshot; re-running refreshed bootstrap');
+        logJson([
+            'event'         => 'self_update_restart',
+            'previous_hash' => $originalHash,
+            'new_hash'      => $updatedHash,
+        ]);
+
+        $reexecArgs = [];
+        foreach ($argv as $index => $arg) {
+            if ($index === 0) {
+                continue;
+            }
+            if ($arg === SELF_UPDATE_SKIP_FLAG) {
+                continue;
+            }
+            $reexecArgs[] = $arg;
+        }
+        $reexecArgs[] = SELF_UPDATE_SKIP_FLAG;
+
+        $command = escapeshellarg(PHP_BINARY).' '.escapeshellarg(__FILE__);
+        foreach ($reexecArgs as $arg) {
+            $command .= ' '.escapeshellarg($arg);
+        }
+
+        passthru($command, $rc);
+        if ($rc !== 0) {
+            fatal('Self-refresh of update.php failed with status '.$rc, $rc);
+        }
+        return;
+    }
 
     putenv('PMSS_JSON_LOG='.JSON_LOG);
 
