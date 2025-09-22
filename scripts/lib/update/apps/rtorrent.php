@@ -16,7 +16,7 @@
  * @copyright 2010-2025 Magna Capax Finland Oy
  */
 
-$rtorrentVersionOutput = trim((string) shell_exec('rtorrent -h 2>&1'));
+$rtorrentVersion = shell_exec('rtorrent -h');
 // Choose version based on which debian version - 0.9.6 does not compile on deb10, but 0.9.8 has severe issues as well
 $debianVersion = file_get_contents('/etc/debian_version');
 if ($debianVersion[0] == 1) {
@@ -30,21 +30,7 @@ $rtorrentCompileOptions = '--with-xmlrpc-c --disable-debug';
 $rtorrentCompileOptionsLib = '--with-udns --with-posix-fallocate --disable-debug';
 $xmlrpcVersion = '3116';
 
-$targets = [$rtorrentVersionTarget];
-$trimmedTarget = str_replace('-udns', '', $rtorrentVersionTarget);
-if ($trimmedTarget !== $rtorrentVersionTarget) {
-    $targets[] = $trimmedTarget;
-}
-$needsUpdate = true;
-foreach ($targets as $candidate) {
-    if ($candidate !== '' && strpos($rtorrentVersionOutput, $candidate) !== false) {
-        $needsUpdate = false;
-        break;
-    }
-}
-
-// #TODO unify version detection with scripts/lib/apps/rtorrent.php to avoid drift.
-if ($needsUpdate) {  // Yeah i know kinda stupid place to look if we got the latest but ...
+if (strpos($rtorrentVersion, "version {$rtorrentVersionTarget}.") === false) {  // Yeah i know kinda stupid place to look if we got the latest but ...
     echo "*** Updating rTorrent\n";
     
     shell_exec('rm -rf /usr/local/lib/libtorrent*; ldconfig;'); // Clean up old libtorrent installed files
