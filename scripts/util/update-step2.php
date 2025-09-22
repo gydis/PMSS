@@ -47,6 +47,31 @@ if (!isset($GLOBALS['PMSS_PROFILE'])) {
     $GLOBALS['PMSS_PROFILE'] = [];
 }
 
+// Detect distro information once so helpers and package installers stay in sync.
+$distroName = strtolower((string) getDistroName());
+if ($distroName === '') {
+    $fallbackName = strtolower(trim((string) @shell_exec('lsb_release -is 2>/dev/null')));
+    if ($fallbackName !== '') {
+        $distroName = $fallbackName;
+    } else {
+        logmsg('Could not detect distro name; defaulting to debian');
+        $distroName = 'debian';
+    }
+}
+
+$distroVersionRaw = (string) getDistroVersion();
+if ($distroVersionRaw === '') {
+    $fallbackVersion = trim((string) @shell_exec('lsb_release -rs 2>/dev/null'));
+    if ($fallbackVersion !== '') {
+        $distroVersionRaw = $fallbackVersion;
+    }
+}
+
+if ($distroVersionRaw === '') {
+    logmsg('Could not detect distro version; defaulting to 0');
+}
+$distroVersion = (int) filter_var($distroVersionRaw, FILTER_SANITIZE_NUMBER_INT) ?: 0;
+
 function pmssRecordProfile(array $entry): void
 {
     $GLOBALS['PMSS_PROFILE'][] = $entry;
@@ -211,8 +236,13 @@ runStep('Ensuring cgroup-bin package present', aptCmd('install -y -q cgroup-bin'
     runStep('Mounting /sys/fs/cgroup', 'mount /sys/fs/cgroup');
 }
 
-// Increase pids max, there was an issue with this and updates would halt due to pids max being reached. SSH unresponsive etc.
-runStep('Raising PID limit for root user slice', "sh -c 'echo 100000 > /sys/fs/cgroup/pids/user.slice/user-0.slice/pids.max'");
+// Increase pids max; skip gracefully on systems using unified cgroups without this path.
+$rootPidSlice = '/sys/fs/cgroup/pids/user.slice/user-0.slice/pids.max';
+if (file_exists($rootPidSlice)) {
+    runStep('Raising PID limit for root user slice', "sh -c 'echo 100000 > {$rootPidSlice}'");
+} else {
+    logmsg('[SKIP] Raising PID limit for root user slice (pids controller path missing)');
+}
 
 // Systemd slice configuration ensures proper process limits for users
 if (file_exists('/usr/lib/systemd/user-.slice.d/99-pmss.conf')) unlink('/usr/lib/systemd/user-.slice.d/99-pmss.conf');  // Remove obsolete defaults
