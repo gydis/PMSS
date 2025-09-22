@@ -1,12 +1,17 @@
 <?php
 /**
- * PMSS (Pulsed Media Seedbox Software) Update Script for Watchdog
- * 
- * This script installs and configures the Watchdog package on a Debian-based system.
- * Watchdog is a daemon that checks the system state and environment according 
- * to the parameters defined in its configuration file. When the system fails these checks, 
- * Watchdog will perform a system reboot to recover the system.
- * 
+ * Watchdog management helper.
+ *
+ * This host classically disables the distribution watchdog service because the
+ * daemon caused more downtime than it prevented in our deployments.  The script
+ * keeps the old installation flow commented for reference while immediately
+ * disabling/removing the service on execution.
+ *
+ * Coordinate before re-enabling watchdog support; any change to this flow
+ * impacts error recovery policies across the fleet.
+ *
+ * @author  Aleksi Ursin <aleksi@magnacapax.fi>
+ * @copyright 2010-2025 Magna Capax Finland Oy
  */
 
 ####   WATCHDOG CAUSES MORE DOWNTIME THAN IT SOLVES

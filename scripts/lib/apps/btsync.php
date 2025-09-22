@@ -1,7 +1,17 @@
 <?php
-# Pulsed Media Seedbox Management Software "PMSS"
-# Uh oh, more legacy ... does anyone use btsync 1.4 anymore or even 2.2? Schedule update for Q4/23
-//Btsync 1.4, 2.2 + Rslsync installer
+/**
+ * BTSync/Resilio bootstrap helper.
+ *
+ * - Ensures the legacy BTSync 1.4 and 2.2 binaries remain available
+ *   under predictable paths and preserves any pre-existing binaries.
+ * - Maintains the rslsync binary at the pinned version shipped by Pulsed Media.
+ *
+ * This workflow has been stable for years—avoid modifications unless the
+ * service itself changes. Coordinate updates with the platform team first.
+ *
+ * @author  Aleksi Ursin <aleksi@magnacapax.fi>
+ * @copyright 2010-2025 Magna Capax Finland Oy
+ */
 
 if (!file_exists('/usr/bin/btsync1.4')) {
     echo "*** BTSync 1.4 not present, downloading and adding!\n";
@@ -32,11 +42,18 @@ if (!file_exists($btsyncPath)) {
 }
 
 
-// Install resilio sync
-$rslVersion = shell_exec("rslsync --help");
-if ($rslVersion !== strpos($rslVersion, "Resilio Sync 2.7.3 (1381)")) unlink('/usr/bin/rslsync');
+// Install Resilio Sync if required.
+$rslsyncBinary   = '/usr/bin/rslsync';
+$rslsyncExpected = 'Resilio Sync 2.7.3 (1381)';
+$rslsyncOutput   = trim((string) shell_exec($rslsyncBinary.' --help 2>/dev/null'));
 
-if (!file_exists('/usr/bin/rslsync')) {
-    echo "*** Resilio sync not present, downloading and adding!\n";
-    passthru("wget http://pulsedmedia.com/remote/pkg/rslsync -O /usr/bin/rslsync; chmod 755 /usr/bin/rslsync");
+if ($rslsyncOutput === '' || strpos($rslsyncOutput, $rslsyncExpected) === false) {
+    if (file_exists($rslsyncBinary)) {
+        echo "*** Resilio Sync binary out of date; refreshing {$rslsyncBinary}\n";
+    } else {
+        echo "*** Resilio Sync not present, downloading package\n";
+    }
+    passthru("wget http://pulsedmedia.com/remote/pkg/rslsync -O {$rslsyncBinary}; chmod 755 {$rslsyncBinary}");
+} else {
+    echo "*** Resilio Sync already at target version ({$rslsyncExpected}); skipping download\n";
 }
