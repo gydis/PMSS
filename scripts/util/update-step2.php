@@ -57,6 +57,7 @@ if (!function_exists('logmsg')) {
 
 pmssConfigureAptNonInteractive('logmsg');
 pmssCompletePendingDpkg();
+pmssApplyDpkgSelections();
 
 $distribution  = pmssDetectDistro();
 $distroName    = $distribution['name'];
@@ -85,6 +86,7 @@ pmssApplyRuntimeTemplates();
 
 // Install APT packages and related tooling.
 include_once '/scripts/lib/update/apps/packages.php';
+pmssFlushPackageQueue();
 pmssAutoremovePackages();
 
 // Web stack hardening and per-user HTTP refresh.

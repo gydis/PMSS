@@ -14,10 +14,6 @@ function pmssInstallPythonToolchain(int $distroVersion): void
         ['python3-virtualenv', 'python-virtualenv'],
         ['python3-pip', 'python-pip'],
     ], 'Python development toolchain');
-
-    if ($distroVersion < 10 && pmssPackageAvailable('python-pip')) {
-        passthru('apt-get remove python-pip -y');
-    }
 }
 
 function pmssInstallZncStack(int $distroVersion): void
@@ -33,7 +29,6 @@ function pmssInstallZncStack(int $distroVersion): void
         ['znc-python3', 'znc-python'],
         'git',
     ], 'ZNC stack');
-    passthru('apt-get install git -y');
 
     pmssInstallBestEffort([
         'python3',
@@ -63,7 +58,7 @@ function pmssInstallZncStack(int $distroVersion): void
     ], 'Python application stack');
 
     if (!file_exists('/usr/bin/ffmpeg')) {
-        passthru('apt-get install ffmpeg -y');
+        pmssQueuePackage('ffmpeg');
     }
 
     passthru('systemctl disable lighttpd');

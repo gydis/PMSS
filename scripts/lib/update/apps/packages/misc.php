@@ -9,26 +9,23 @@ function pmssInstallSabnzbd(): void
 {
     if (!file_exists('/usr/bin/sabnzbdplus')) {
         echo "## Installing Sabnzbdplus\n";
-        passthru('apt-get install sabnzbdplus -y;');
+        pmssQueuePackage('sabnzbdplus');
     }
 }
 
 function pmssInstallMiscTools(): void
 {
     if (!file_exists('/usr/bin/mkvextract')) {
-        passthru('apt-get install mkvtoolnix -y');
+        pmssQueuePackage('mkvtoolnix');
     }
 
     if (!file_exists('/usr/sbin/openvpn')) {
-        passthru('apt-get install openvpn easy-rsa -y ');
+        pmssQueuePackages(['openvpn', 'easy-rsa']);
     }
 
-    passthru('apt-get remove munin -y');
-    passthru('apt-get install sudo -y');
-    passthru('apt-get remove consolekit -y');
-    passthru('apt-get install expect -y');
+    pmssQueuePackages(['sudo', 'expect']);
 
     if (!file_exists('/sbin/ipset')) {
-        passthru('apt-get install ipset -y');
+        pmssQueuePackage('ipset');
     }
 }

@@ -3,8 +3,79 @@
  * Helper utilities for package installation routines.
  */
 
+require_once __DIR__.'/../../runtime/commands.php';
+
 putenv('DEBIAN_FRONTEND=noninteractive');
 putenv('APT_LISTCHANGES_FRONTEND=none');
+
+const PMSS_PACKAGE_QUEUE_DEFAULT = '__default__';
+
+if (!isset($GLOBALS['PMSS_PACKAGE_QUEUE'])) {
+    $GLOBALS['PMSS_PACKAGE_QUEUE'] = [];
+}
+
+if (!isset($GLOBALS['PMSS_POST_INSTALL_COMMANDS'])) {
+    $GLOBALS['PMSS_POST_INSTALL_COMMANDS'] = [];
+}
+
+function pmssQueuePackages(array $packages, ?string $target = null): void
+{
+    global $PMSS_PACKAGE_QUEUE;
+    $key = $target ?? PMSS_PACKAGE_QUEUE_DEFAULT;
+    if (!isset($PMSS_PACKAGE_QUEUE[$key])) {
+        $PMSS_PACKAGE_QUEUE[$key] = [];
+    }
+    foreach ($packages as $pkg) {
+        $pkg = trim($pkg);
+        if ($pkg !== '') {
+            $PMSS_PACKAGE_QUEUE[$key][] = $pkg;
+        }
+    }
+}
+
+function pmssQueuePackage(string $package, ?string $target = null): void
+{
+    pmssQueuePackages([$package], $target);
+}
+
+function pmssFlushPackageQueue(): void
+{
+    global $PMSS_PACKAGE_QUEUE;
+    global $PMSS_POST_INSTALL_COMMANDS;
+    if (empty($PMSS_PACKAGE_QUEUE)) {
+        return;
+    }
+
+    foreach ($PMSS_PACKAGE_QUEUE as $target => $packages) {
+        $packages = array_values(array_unique(array_filter($packages)));
+        if (empty($packages)) {
+            continue;
+        }
+        $pkgArgs = implode(' ', array_map('escapeshellarg', $packages));
+        if ($target === PMSS_PACKAGE_QUEUE_DEFAULT) {
+            $cmd = 'apt-get install -y '.$pkgArgs;
+            runStep('Installing packages', $cmd);
+        } else {
+            $cmd = sprintf('apt-get install -y -t %s %s', escapeshellarg($target), $pkgArgs);
+            runStep('Installing packages ('.$target.')', $cmd);
+        }
+    }
+
+    $PMSS_PACKAGE_QUEUE = [];
+
+    if (!empty($PMSS_POST_INSTALL_COMMANDS)) {
+        foreach ($PMSS_POST_INSTALL_COMMANDS as [$description, $command]) {
+            runStep($description, $command);
+        }
+        $PMSS_POST_INSTALL_COMMANDS = [];
+    }
+}
+
+function pmssQueuePostInstallCommand(string $description, string $command): void
+{
+    global $PMSS_POST_INSTALL_COMMANDS;
+    $PMSS_POST_INSTALL_COMMANDS[] = [$description, $command];
+}
 
 /**
  * Return the dpkg status string for a package or an empty string when missing.
@@ -90,7 +161,7 @@ function pmssInstallBestEffort(array $items, string $label = ''): void
         }
         return;
     }
-    passthru('apt-get install -y '.implode(' ', $selection));
+    pmssQueuePackages($selection);
 }
 
 /**
@@ -101,27 +172,18 @@ function pmssInstallProftpdStack(int $distroVersion): void
     $proftpdPackages = ['proftpd-core', 'proftpd-basic', 'proftpd-mod-crypto', 'proftpd-mod-wrap'];
 
     if ($distroVersion >= 10) {
-        if (pmssPackagesNeedCleanup($proftpdPackages)) {
-            passthru('apt-get remove -y proftpd-core proftpd-basic proftpd-mod-crypto proftpd-mod-wrap');
+        if (is_dir('/run/systemd/system')) {
+            runStep('Ensuring proftpd unit is not masked', 'systemctl unmask proftpd || true');
         }
-
-        $installCommand = 'apt-get install -y '.implode(' ', $proftpdPackages);
-        $installRc = 0;
-        passthru($installCommand, $installRc);
-        if ($installRc !== 0 && !pmssPackagesInstalled($proftpdPackages)) {
-            echo "Warning: ProFTPD packages failed to configure, attempting recovery\n";
-            passthru('apt-get -f install -y');
-            passthru('dpkg --configure proftpd-core proftpd-mod-crypto proftpd-mod-wrap proftpd-basic');
-        }
-
-        if (!pmssPackagesInstalled($proftpdPackages)) {
-            echo "Warning: ProFTPD packages remain unconfigured; proceeding without FTP daemon\n";
-        }
-
-        passthru('apt-get install nftables -y;');
+        pmssQueuePackages(array_merge($proftpdPackages, ['nftables']));
     } else {
-        passthru('apt-get install proftpd-basic -y');
+        pmssQueuePackage('proftpd-basic');
     }
+
+    pmssQueuePostInstallCommand(
+        'Reconfiguring proftpd packages',
+        'dpkg --configure proftpd-core proftpd-mod-crypto proftpd-mod-wrap proftpd-basic || true'
+    );
 }
 
 /**

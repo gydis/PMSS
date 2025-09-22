@@ -7,7 +7,7 @@
  * already matches.
  */
 
-require_once dirname(__DIR__).'/runtime.php';
+require_once dirname(__DIR__, 2).'/runtime.php';
 
 const RADARR_VERSION_RECORD = '/etc/seedbox/config/app-versions/radarr';
 const RADARR_INSTALL_PATH   = '/opt/Radarr';

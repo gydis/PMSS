@@ -7,7 +7,7 @@
  * stay dependable.
  */
 
-require_once dirname(__DIR__).'/runtime.php';
+require_once dirname(__DIR__, 2).'/runtime.php';
 
 const SONARR_VERSION_RECORD = '/etc/seedbox/config/app-versions/sonarr';
 const SONARR_INSTALL_PATH   = '/opt/Sonarr';

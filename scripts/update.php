@@ -538,6 +538,14 @@ function runUpdateStep2(bool $dryRun): void
     }
 }
 
+function runAutoremove(): void
+{
+    $cmd = 'DEBIAN_FRONTEND=noninteractive APT_LISTCHANGES_FRONTEND=none '
+        .'apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold '
+        .'autoremove -y';
+    runFatal($cmd, EXIT_COPY);
+}
+
 function maybeRunDistUpgrade(bool $distUpgrade): void
 {
     if (!$distUpgrade) {
@@ -615,6 +623,10 @@ function bootstrapMain(array $argv): void
     if ($options['scripts_only']) {
         logmsg('Skipping update-step2.php (--scripts-only)');
         logEvent('update_step2_skipped', ['reason' => 'scripts_only']);
+        if (!$options['dry_run']) {
+            logmsg('Running apt autoremove for scripts-only update');
+            runAutoremove();
+        }
     } else {
         runUpdateStep2($options['dry_run']);
     }
