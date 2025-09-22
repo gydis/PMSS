@@ -45,7 +45,7 @@ class UpdateHelpersTest extends TestCase
         $logs = [];
         $logger = function (string $m) use (&$logs): void { $logs[] = $m; };
         \updateAptSources('debian', 9, 'dead', [
-            'jessie' => '', 'buster' => '', 'bullseye' => '', 'bookworm' => ''
+            'jessie' => '', 'buster' => '', 'bullseye' => '', 'bookworm' => '', 'trixie' => ''
         ], $logger);
         $this->assertTrue((bool)array_filter($logs, fn($l) => strpos($l, 'Unsupported Debian version: 9') !== false));
     }
@@ -59,7 +59,7 @@ class UpdateHelpersTest extends TestCase
         $logger = function (string $m) use (&$logs): void { $logs[] = $m; };
         \updateAptSources('debian', 12, $hash, [
             'bookworm' => $content,
-            'bullseye' => '', 'buster' => '', 'jessie' => '',
+            'bullseye' => '', 'buster' => '', 'jessie' => '', 'trixie' => '',
         ], $logger);
         $this->assertTrue((bool)array_filter($logs, fn($l) => strpos($l, 'already correct') !== false));
         // Important: No destructive call path is taken here
@@ -70,9 +70,22 @@ class UpdateHelpersTest extends TestCase
         $logs = [];
         $logger = function (string $m) use (&$logs): void { $logs[] = $m; };
         \updateAptSources('debian', 11, 'hash', [
-            'bullseye' => '', 'buster' => '', 'jessie' => '', 'bookworm' => ''
+            'bullseye' => '', 'buster' => '', 'jessie' => '', 'bookworm' => '', 'trixie' => ''
         ], $logger);
         $this->assertTrue((bool)array_filter($logs, fn($l) => strpos($l, 'Bullseye template missing') !== false));
+    }
+
+    public function testUpdateAptSourcesDebian13AlreadyCorrect(): void
+    {
+        $content = "deb https://example-trixie invalid\n";
+        $hash = sha1($content);
+        $logs = [];
+        $logger = function (string $m) use (&$logs): void { $logs[] = $m; };
+        \updateAptSources('debian', 13, $hash, [
+            'trixie' => $content,
+            'bookworm' => '', 'bullseye' => '', 'buster' => '', 'jessie' => '',
+        ], $logger);
+        $this->assertTrue((bool)array_filter($logs, fn($l) => strpos($l, 'Trixie') !== false));
     }
 
     public function testGetOsReleaseDataIsArray(): void

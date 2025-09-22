@@ -2,7 +2,7 @@
 namespace PMSS\Tests;
 
 require_once __DIR__.'/TestCase.php';
-require_once dirname(__DIR__).'/cli.php';
+require_once dirname(__DIR__).'/cli/OptionParser.php';
 
 class CliHelperTest extends TestCase
 {

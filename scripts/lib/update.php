@@ -6,47 +6,44 @@
  * Contains various functions, settings, etc. for use in /scripts/util/update-step2.php.
  */
 
-// rTorrent class required
-$scriptsRoot = dirname(__DIR__);
-require_once $scriptsRoot.'/lib/rtorrentConfig.php';
-require_once $scriptsRoot.'/lib/runtime.php';
+require_once __DIR__.'/rtorrentConfig.php';
+require_once __DIR__.'/runtime.php';
+require_once __DIR__.'/update/logging.php';
+require_once __DIR__.'/update/apt.php';
 
-// Global variables
-if (!defined('PMSS_TEST_MODE')) {
-    $rtorrentConfig = new rtorrentConfig();
-    $users          = shell_exec($scriptsRoot.'/listUsers.php');
-    $users          = explode("\n", trim($users));
-    $distroName     = getDistroName();          // Returns the distribution ID (e.g. "debian", "ubuntu")
-    $distroVersion  = getDistroVersion();       // Returns the distribution version number (numeric part)
-    $serverHostname = trim(file_get_contents('/etc/hostname')); // Hostname of the server as set in /etc/hostname
-    $lsbrelease     = trim(shell_exec('/usr/bin/lsb_release -cs'));  // LSB Release codename; may be the best selector for packages
-} else {
-    $rtorrentConfig = null;
-    $users          = [];
-    $distroName     = '';
-    $distroVersion  = '';
-    $serverHostname = '';
-    $lsbrelease     = '';
+/**
+ * Locate the base directory for skeleton files.
+ */
+function pmssSkeletonBase(): string
+{
+    $override = getenv('PMSS_SKEL_DIR');
+    if (is_string($override) && $override !== '') {
+        return rtrim($override, '/');
+    }
+    return '/etc/skel';
 }
 
 /**
- * Update a user's file from /etc/skel.
+ * Resolve a path inside the skeleton directory.
+ */
+function pmssSkeletonPath(string $relative): string
+{
+    return pmssSkeletonBase().'/'.$relative;
+}
+
+/**
+ * Update a user's file from the skeleton directory.
  *
- * This function copies a source file from /etc/skel to a user's home directory
- * if it doesn't exist there, or updates it if the contents differ.
- *
- * @param string $file The filename relative to /etc/skel and the user's home.
+ * @param string $file The filename relative to the skeleton base and the user's home.
  * @param string $user The username whose file should be updated.
- *
- * @return void
  */
 function updateUserFile($file, $user) {
     if (empty($file) || empty($user) || !file_exists("/home/{$user}")) {
         echo "Invalid parameters, file: {$file} user: {$user}\n";
         return;
     }
-    
-    $sourceFile = '/etc/skel/' . $file;
+
+    $sourceFile = pmssSkeletonPath($file);
     $targetFile = "/home/{$user}/" . $file;
         
     if (!file_exists($sourceFile)) {
@@ -211,184 +208,25 @@ function getPmssVersion($versionFile = '/etc/seedbox/config/version') {
     return 'unknown';
 }
 
-// ----- Utility helpers -----
-const PMSS_LOG_FILE = '/var/log/pmss-update.log';
-
-function pmssJsonLogPath(): string
-{
-    static $path = null;
-    if ($path === null) {
-        $candidate = getenv('PMSS_JSON_LOG') ?: '';
-        $path = $candidate !== '' ? $candidate : '';
+// Backwards-compatible wrappers for legacy helper names.
+if (!function_exists('loadRepoTemplate')) {
+    function loadRepoTemplate(string $codename, ?callable $logger = null): string
+    {
+        return pmssLoadRepoTemplate($codename, $logger);
     }
-    return $path;
 }
 
-function pmssLogJson(array $payload): void
-{
-    $path = pmssJsonLogPath();
-    if ($path === '') return;
-    $payload['ts'] = $payload['ts'] ?? date('c');
-    @file_put_contents($path, json_encode($payload, JSON_UNESCAPED_SLASHES).PHP_EOL, FILE_APPEND | LOCK_EX);
+if (!function_exists('safeWriteSources')) {
+    function safeWriteSources(string $content, string $label, ?callable $logger = null): bool
+    {
+        return pmssSafeWriteSources($content, $label, $logger);
+    }
 }
 
-/** Log a message to the common update log and stdout */
-function logMessage(string $m, array $context = []): void {
-    $ts = date('[Y-m-d H:i:s] ');
-    @file_put_contents(PMSS_LOG_FILE, $ts.$m.PHP_EOL, FILE_APPEND|LOCK_EX);
-    echo $m.PHP_EOL;
-    pmssLogJson([
-        'event'   => 'log',
-        'message' => $m,
-        'context' => $context,
-    ]);
-}
-
-/**
- * Resolve which logger callback to use for helper routines.
- */
-function pmssSelectLogger(?callable $logger = null): callable
-{
-    if ($logger !== null && is_callable($logger)) {
-        return $logger;
-    }
-    return 'logMessage';
-}
-
-/**
- * Load an APT sources template from /etc/seedbox/config.
- */
-function loadRepoTemplate(string $codename, ?callable $logger = null): string
-{
-    $log = pmssSelectLogger($logger);
-    $path = "/etc/seedbox/config/template.sources.$codename";
-
-    if (!file_exists($path)) {
-        $log("Repository template missing: $path");
-        return '';
-    }
-
-    $data = trim(@file_get_contents($path));
-    if ($data === '') {
-        $log("Repository template empty: $path");
-        return '';
-    }
-
-    return $data . "\n";
-}
-
-/**
- * Replace /etc/apt/sources.list with rollback support.
- */
-function safeWriteSources(string $content, string $label, ?callable $logger = null): bool
-{
-    $log = pmssSelectLogger($logger);
-    $target = '/etc/apt/sources.list';
-    $backup = $target . '.pmss-backup';
-
-    if ($content === '') {
-        $log("[WARN] Empty repository content for $label, skipping");
-        return false;
-    }
-
-    $current = @file_get_contents($target);
-    if ($current !== false) {
-        if (@file_put_contents($backup, $current, LOCK_EX) === false) {
-            $log("[WARN] Unable to create backup $backup before updating $label");
-        } else {
-            $log("Backup for sources.list written to $backup");
-        }
-    }
-
-    if (@file_put_contents($target, $content, LOCK_EX) === false) {
-        $log("[ERROR] Failed to write sources.list for $label, attempting restore");
-        if ($current !== false) {
-            @file_put_contents($target, $current, LOCK_EX);
-        }
-        return false;
-    }
-
-    return true;
-}
-
-/**
- * Ensure /etc/apt/sources.list matches the recommended repository layout.
- */
-function updateAptSources(string $distroName, int $distroVersion, string $currentHash,
-                          array $repos, ?callable $logger = null): void
-{
-    $log = pmssSelectLogger($logger);
-
-    switch ($distroName) {
-        case 'debian':
-            switch ($distroVersion) {
-                case 8:
-                    if ($repos['jessie'] === '') {
-                        $log('Jessie template missing, leaving sources.list untouched');
-                        break;
-                    }
-                    $hash = sha1($repos['jessie']);
-                    if ($currentHash !== $hash && safeWriteSources($repos['jessie'], 'Jessie', $log)) {
-                        passthru("echo 'Acquire::Check-Valid-Until \"false\";' >/etc/apt/apt.conf.d/90ignore-release-date");
-                        passthru('apt-get clean;');
-                        $log('Applied Debian Jessie repository config');
-                    } else {
-                        $log('Debian Jessie repositories already correct');
-                    }
-                    break;
-
-                case 10:
-                    if ($repos['buster'] === '') {
-                        $log('Buster template missing, leaving sources.list untouched');
-                        break;
-                    }
-                    $hash = sha1($repos['buster']);
-                    if ($currentHash !== $hash && safeWriteSources($repos['buster'], 'Buster', $log)) {
-                        $log('Applied Debian Buster repository config');
-                    } else {
-                        $log('Debian Buster repositories already correct');
-                    }
-                    break;
-
-                case 11:
-                    if ($repos['bullseye'] === '') {
-                        $log('Bullseye template missing, leaving sources.list untouched');
-                        break;
-                    }
-                    $hash = sha1($repos['bullseye']);
-                    if ($currentHash !== $hash && safeWriteSources($repos['bullseye'], 'Bullseye', $log)) {
-                        $log('Applied Debian Bullseye repository config');
-                    } else {
-                        $log('Debian Bullseye repositories already correct');
-                    }
-                    break;
-
-                case 12:
-                    if ($repos['bookworm'] === '') {
-                        $log('Bookworm template missing, leaving sources.list untouched');
-                        break;
-                    }
-                    $hash = sha1($repos['bookworm']);
-                    if ($currentHash !== $hash && safeWriteSources($repos['bookworm'], 'Bookworm', $log)) {
-                        $log('Applied Debian Bookworm repository config');
-                    } else {
-                        $log('Debian Bookworm repositories already correct');
-                    }
-                    break;
-
-                default:
-                    $log("Unsupported Debian version: $distroVersion");
-                    break;
-            }
-            break;
-
-        case 'ubuntu':
-            $log('Ubuntu is not supported yet.');
-            break;
-
-        default:
-            $log("Unsupported distro: $distroName");
-            break;
+if (!function_exists('updateAptSources')) {
+    function updateAptSources(string $distroName, int $distroVersion, string $currentHash, array $repos, ?callable $logger = null): void
+    {
+        pmssUpdateAptSources($distroName, $distroVersion, $currentHash, $repos, $logger);
     }
 }
 

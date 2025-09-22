@@ -62,8 +62,16 @@ if (!file_exists("/etc/nginx/ssl/nginx.crt")) {
     passthru('openssl req -x509 -nodes -days 365 -newkey rsa:2048 -subj "/C=FI/ST=none/L=none/O=PulsedMedia/CN=' . $hostname . '" -keyout /etc/nginx/ssl/nginx.key -out /etc/nginx/ssl/nginx.crt');
 }
 
-if (!file_exists("/etc/nginx/users")) mkdir("/etc/nginx/users", 0751);
-    else passthru('rm /etc/nginx/users/*');	// Empty all previous configs to ensure no unnecessary ones there
+if (!file_exists("/etc/nginx/users")) {
+    mkdir("/etc/nginx/users", 0751);
+} else {
+    $existingConfigs = glob('/etc/nginx/users/*');
+    if ($existingConfigs !== false) {
+        foreach ($existingConfigs as $oldConfig) {
+            @unlink($oldConfig);
+        }
+    }
+}
 
 foreach($users AS $thisUser) {
     $portFile = "/etc/seedbox/runtime/ports/lighttpd-{$thisUser}";
@@ -81,7 +89,10 @@ foreach($users AS $thisUser) {
 }
 
 // Disallow config reading by anyone else
-passthru('chmod 640 /etc/nginx/users/*');
+$newConfigs = glob('/etc/nginx/users/*');
+if ($newConfigs !== false && count($newConfigs) > 0) {
+    passthru('chmod 640 /etc/nginx/users/*');
+}
 passthru('chmod 640 /etc/nginx/*.conf');
 
 echo "## Done! You should restart nginx:\n/etc/init.d/nginx restart\n";

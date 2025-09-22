@@ -4,7 +4,7 @@
  * PMSS Bootstrap Updater
  *
  * Usage:
- *   /scripts/update.php [<spec>] [--repo=<url>] [--branch=<name>] [--dry-run]
+ *   /scripts/update.php [<spec>] [--repo=<url>] [--branch=<name>] [--dry-run] [--dist-upgrade]
  *   /scripts/update.php git/main                # current main branch
  *   /scripts/update.php git/dev:2024-12-05      # branch pinned to a date
  *   /scripts/update.php release:2025-07-12      # explicit tagged release
@@ -40,6 +40,7 @@ const JSON_LOG      = '/var/log/pmss-update.jsonl';
 const EXIT_PARSE    = 11;
 const EXIT_FETCH    = 12;
 const EXIT_COPY     = 13;
+const EXIT_DIST     = 14;
 
 if (!function_exists('logmsg')) {
     function logmsg(string $message): void
@@ -87,12 +88,13 @@ function ensureRoot(): void
 
 function usage(string $script): void
 {
-    echo "Usage: {$script} [<spec>] [--repo=<url>] [--branch=<name>] [--dry-run]\n";
+    echo "Usage: {$script} [<spec>] [--repo=<url>] [--branch=<name>] [--dry-run] [--dist-upgrade]\n";
     echo "Examples:\n";
     echo "  {$script}                      # update from git/main (default repo)\n";
     echo "  {$script} git/dev:2025-01-03   # dev branch pinned to a date\n";
     echo "  {$script} release:2025-07-12   # explicit release tag\n";
     echo "  {$script} --repo=https://git/url.git --branch=beta\n";
+    echo "  {$script} --dist-upgrade            # run Debian release upgrade helper\n";
 }
 
 function run(string $command, int $failureCode): void
@@ -387,6 +389,7 @@ function runUpdater(array $argv): void
 
     $startTime  = microtime(true);
     $dryRun     = false;
+    $distUpgrade = false;
     $specInput  = '';
     $specRepo   = null;
     $specBranch = null;
@@ -398,6 +401,10 @@ function runUpdater(array $argv): void
         }
         if ($arg === '--dry-run') {
             $dryRun = true;
+            continue;
+        }
+        if ($arg === '--dist-upgrade') {
+            $distUpgrade = true;
             continue;
         }
         if (str_starts_with($arg, '--repo=')) {
@@ -442,6 +449,11 @@ function runUpdater(array $argv): void
         'branch'  => $spec['branch'],
         'pin'     => $spec['pin'],
     ]);
+
+    if ($distUpgrade) {
+        run('/scripts/util/update-dist-upgrade.php', EXIT_DIST);
+        return;
+    }
 
     $tmp = tmpdir();
 

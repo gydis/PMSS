@@ -13,7 +13,9 @@ if ($fetchedLatest) {
 #Check rclone version
 if (file_exists('/usr/bin/rclone')) {
     $rcloneCurrentVersion = `/usr/bin/rclone -V`;
-    if (strpos($rcloneCurrentVersion, "rclone v{$rcloneVersion}") == false) unlink('/usr/bin/rclone');    // This forces following code to install rclone .. thus updating it :)
+    if (strpos($rcloneCurrentVersion, "rclone v{$rcloneVersion}") === false) {
+        unlink('/usr/bin/rclone');    // This forces following code to install rclone .. thus updating it :)
+    }
 }
 
 #Install rclone

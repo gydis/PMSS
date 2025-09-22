@@ -14,20 +14,32 @@ if ($configTemplate === false || $hostnameRaw === false) {
 }
 
 $hostname = trim($hostnameRaw);
+$hostname = strtolower($hostname);
+$hostname = preg_replace('/[^a-z0-9.-]/', '', $hostname);
+if ($hostname === '') {
+    $hostname = 'localhost';
+}
 $rendered = str_replace(
     ['%SERVERNAME%', '%TLS_CONFIGURATION%'],
     [$hostname, buildTlsConfiguration($hostname)],
     $configTemplate
 );
 
-@mkdir('/var/log/proftpd', 0750, true);
-@mkdir('/var/run/proftpd', 0750, true);
+$logDir = '/var/log/proftpd';
+$runDir = '/var/run/proftpd';
+
+if (!is_dir($logDir) && !@mkdir($logDir, 0750, true)) {
+    echo "Warning: Unable to create {$logDir}\n";
+}
+if (!is_dir($runDir) && !@mkdir($runDir, 0750, true)) {
+    echo "Warning: Unable to create {$runDir}\n";
+}
 
 file_put_contents('/etc/proftpd/proftpd.conf', $rendered);
 
 if (is_dir('/run/systemd/system')) {
     passthru('systemctl restart proftpd');
-} else {
+} elseif (file_exists('/etc/init.d/proftpd')) {
     passthru('/etc/init.d/proftpd restart');
 }
 
