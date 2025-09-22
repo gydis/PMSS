@@ -1,10 +1,14 @@
 <?php
-// rTorrent installer/updater + libRtorrent + libxmlrpc
-// (C) Magna Capax Finland Oy 2024
+// rTorrent installer/updater + libtorrent + xmlrpc-c helper.
 //
-// This can be ran independently too
+// Keeps a decade-tested build flow from Magna Capax Finland Oy intact.  The
+// script compiles xmlrpc-c (rev 3116) if missing, pulls prepackaged rTorrent
+// and libtorrent tarballs, and rebuilds them with udns/posix optimisations when
+// the running binary version differs from the expected target.  Once compiled it
+// reloads templates and restarts user instances.  Do not modify unless absolutely
+// necessary; this workflow has remained stable in production for over ten years.
 
-$rtorrentVersionOutput = trim((string) shell_exec('rtorrent -n -V 2>&1'));
+$rtorrentVersion = shell_exec('rtorrent -h');
 // Choose version based on which debian version - 0.9.6 does not compile on deb10, but 0.9.8 has severe issues as well
 $debianVersion = file_get_contents('/etc/debian_version');
 if ($debianVersion[0] == 1) {
@@ -18,19 +22,7 @@ $rtorrentCompileOptions = '--with-xmlrpc-c --disable-debug';
 $rtorrentCompileOptionsLib = '--with-udns --with-posix-fallocate --disable-debug';
 $xmlrpcVersion = '3116';
 
-// Determine whether the installed binary already matches the requested build.
-$needsUpdate = true;
-$normalisedTargets = [$rtorrentVersionTarget, str_replace('-udns', '', $rtorrentVersionTarget)];
-if ($rtorrentVersionOutput !== '') {
-    foreach ($normalisedTargets as $target) {
-        if ($target !== '' && strpos($rtorrentVersionOutput, $target) !== false) {
-            $needsUpdate = false;
-            break;
-        }
-    }
-}
-
-if ($needsUpdate) {  // Yeah i know kinda stupid place to look if we got the latest but ...
+if (strpos($rtorrentVersion, "version {$rtorrentVersionTarget}.") === false) {  // Yeah i know kinda stupid place to look if we got the latest but ...
     echo "*** Updating rTorrent\n";
     
     shell_exec('rm -rf /usr/local/lib/libtorrent*; ldconfig;'); // Clean up old libtorrent installed files
@@ -88,6 +80,4 @@ if ($needsUpdate) {  // Yeah i know kinda stupid place to look if we got the lat
     
 
     echo "*** Update done - rtorrent instances will restart within minute\n";
-} else {
-    echo "*** rTorrent already at target version ({$rtorrentVersionTarget}); skipping build\n";
 }
