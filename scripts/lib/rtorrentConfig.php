@@ -166,14 +166,24 @@ class rtorrentConfig {
         $directoryBase = '/var/lib/pmss/ports';
         $directoryType = $directoryBase . '/' . $type;
         
-        if (!file_exists($directoryBase)) mkdir($directoryBase, 0755);
-        if (!file_exists($directoryType)) mkdir($directoryType, 0755);
-        
+        if (!is_dir($directoryBase)) {
+            if (!@mkdir($directoryBase, 0755, true) && !is_dir($directoryBase)) {
+                throw new RuntimeException('Unable to create port reservation base directory: '.$directoryBase);
+            }
+        }
+        if (!is_dir($directoryType)) {
+            if (!@mkdir($directoryType, 0755, true) && !is_dir($directoryType)) {
+                throw new RuntimeException('Unable to create port reservation directory: '.$directoryType);
+            }
+        }
+
         do {
             $port = round(rand($rangeStart, $rangeEnd));
         } while (file_exists($directoryType . '/' . $port));
 
-        touch($directoryType . '/' . $port);
+        if (@touch($directoryType . '/' . $port) === false) {
+            throw new RuntimeException('Unable to reserve port file: '.$directoryType.'/'.$port);
+        }
 
         return $port;
         
