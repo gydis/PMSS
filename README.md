@@ -53,6 +53,14 @@ To upgrade the underlying Debian release automatically, run the updater with the
 performs a dist-upgrade (Debian&nbsp;10→11 or 11→12) using the recommended
 commands.
 
+Need to refresh only the new scripts and skeleton without running the
+heavyweight configuration pass? Invoke `/scripts/update.php` with
+`--scripts-only` to deploy the fetched `/scripts` and `/etc/skel` content while
+skipping `update-step2.php`.
+
+See `docs/update.md` for a deep dive into the two-phase updater architecture
+and helper module layout introduced in the recent refactor.
+
 ### Debian 10 to Debian 11 Upgrade
 
 Dist-upgrade functions.
