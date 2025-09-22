@@ -21,25 +21,32 @@ if (empty($argv[1]) || empty($argv[2]) || empty($argv[3])) {
 }
 
 $user = [
-    'name'   => $argv[1],
-    'memory' => (int) $argv[2],
-    'quota'  => (int) $argv[3],
-    'id'     => (int) trim(`id -u {$argv[1]}`),
+    'name'      => $argv[1],
+    'memory'    => (int) $argv[2],
+    'quota'     => (int) $argv[3],
     'CPUWeight' => isset($argv[5]) ? (int) $argv[5] : 500,
     'IOWeight'  => isset($argv[6]) ? (int) $argv[6] : 500,
 ];
+$user['id'] = (int) trim(`id -u {$user['name']}`);
 
 if (isset($argv[4])) {
     $user['trafficLimit'] = (int) $argv[4];
 }
 
-if ($user['id'] < 1000) die("No system ID or user does not exist\n");
-if (!file_exists("/home/{$user['name']}")) die("User does not exist\n");
+if ($user['id'] < 1000) {
+    die("No system ID or user does not exist\n");
+}
+if (!file_exists("/home/{$user['name']}")) {
+    die("User does not exist\n");
+}
 
 $userList = file_get_contents('/etc/passwd');
-if (strpos($userList, $user['name']) === false) die("No such user in passwd list\n");
+if (strpos($userList, $user['name']) === false) {
+    die("No such user in passwd list\n");
+}
 
 userApplyTrafficLimit($user);
+
 $user['CPUWeight'] = $user['CPUWeight'] ?: 500;
 $user['IOWeight']  = $user['IOWeight']  ?: 500;
 

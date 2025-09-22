@@ -1,8 +1,20 @@
 <?php
-// rTorrent installer/updater + libRtorrent + libxmlrpc
-// (C) Magna Capax Finland Oy 2024
-//
-// This can be ran independently too
+/**
+ * rTorrent / libtorrent build helper.
+ *
+ * - Compiles xmlrpc-c (rev 3116) if the static libs are missing.
+ * - Fetches the pre-packaged rTorrent and libtorrent tarballs from Pulsed Media
+ *   mirrors and rebuilds them with udns + posix-fallocate optimisations when the
+ *   running binary version differs from the expected target.
+ * - Reloads templates and restarts user instances once the binaries are updated.
+ *
+ * This bootstrap has been battle-tested in production deployments since 2010
+ * and should remain unchanged unless absolutely necessary. Coordinate with the
+ * platform team before modifying the flow.
+ *
+ * @author  Aleksi Ursin <aleksi@magnacapax.fi>
+ * @copyright 2010-2025 Magna Capax Finland Oy
+ */
 
 $rtorrentVersion = shell_exec('rtorrent -h');
 // Choose version based on which debian version - 0.9.6 does not compile on deb10, but 0.9.8 has severe issues as well

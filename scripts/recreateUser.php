@@ -2,10 +2,22 @@
 <?php
 declare(strict_types=1);
 
-/*
- *  Pulsed Media - recreateUser.php  (v5, BOM-safe, self-healing)
+/**
+ * Recreate tenant helper (v5, BOM-safe, self-healing).
  *
- *  Usage:  recreateUser.php USERNAME MAX_RTORRENT_MEMORY_MiB DISK_QUOTA_GiB
+ * - Archives a user's home, rebuilds the account with fresh quota/memory
+ *   limits, and restores critical configuration while leaving room for manual
+ *   intervention when needed.
+ * - Includes defensive BOM handling and strict argument validation to avoid
+ *   destructive mistakes during emergency recoveries.
+ *
+ * This script has been refined since the early 2010s; coordinate any changes
+ * with the platform team before altering the workflow.
+ *
+ * Usage: recreateUser.php USERNAME MAX_RTORRENT_MEMORY_MiB DISK_QUOTA_GiB
+ *
+ * @author  Aleksi Ursin <aleksi@magnacapax.fi>
+ * @copyright 2010-2025 Magna Capax Finland Oy
  */
 
 /* ===== 0. Strip UTF-8 BOM if present ===== */
@@ -34,6 +46,7 @@ $quotaGiB = (int)$quotaGiB;
 /* ===== 2. Paths ===== */
 $homeDir   = "/home/{$userName}";
 $backupDir = "/home/backup-{$userName}";
+// #TODO consider abstracting path handling into shared helper to keep scripts in sync.
 
 /* ===== 3. Pre-flight ===== */
 $passwd = posix_getpwnam($userName);

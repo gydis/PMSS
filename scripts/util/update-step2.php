@@ -18,6 +18,10 @@ requireRoot();
 
 putenv('DEBIAN_FRONTEND=noninteractive');
 putenv('APT_LISTCHANGES_FRONTEND=none');
+putenv('UCF_FORCE_CONFOLD=1');
+putenv('UCF_FORCE_CONFNEW=0');
+putenv('UCF_FORCE_CONFDEF=1');
+putenv('NEEDRESTART_MODE=a');
 
 
 // logmsg is defined in /scripts/update.php when this file is loaded from there.
@@ -46,6 +50,58 @@ if (!function_exists('logmsg')) {
 if (!isset($GLOBALS['PMSS_PROFILE'])) {
     $GLOBALS['PMSS_PROFILE'] = [];
 }
+
+// Detect distro information once so helpers and package installers stay in sync.
+$distroName = strtolower((string) getDistroName());
+if ($distroName === '') {
+    $fallbackName = strtolower(trim((string) @shell_exec('lsb_release -is 2>/dev/null')));
+    if ($fallbackName !== '') {
+        $distroName = $fallbackName;
+    } else {
+        logmsg('Could not detect distro name; defaulting to debian');
+        $distroName = 'debian';
+    }
+}
+
+$distroVersionRaw = (string) getDistroVersion();
+if ($distroVersionRaw === '') {
+    $fallbackVersion = trim((string) @shell_exec('lsb_release -rs 2>/dev/null'));
+    if ($fallbackVersion !== '') {
+        $distroVersionRaw = $fallbackVersion;
+    }
+}
+
+if ($distroVersionRaw === '') {
+    logmsg('Could not detect distro version; defaulting to 0');
+}
+$distroVersion = (int) filter_var($distroVersionRaw, FILTER_SANITIZE_NUMBER_INT) ?: 0;
+
+// Ensure apt consistently operates without interactive prompts.
+$aptNonInteractivePath = '/etc/apt/apt.conf.d/90pmss-noninteractive';
+$aptNonInteractiveContents = <<<APTCONF
+Dpkg::Options {
+    "--force-confdef";
+    "--force-confold";
+}
+APT::Get::Assume-Yes "true";
+APT::Color "0";
+DPkg::Use-Pty "0";
+APTCONF;
+
+$existingAptConfig = @file_get_contents($aptNonInteractivePath);
+if ($existingAptConfig === false || trim($existingAptConfig) !== trim($aptNonInteractiveContents)) {
+    if (@file_put_contents($aptNonInteractivePath, $aptNonInteractiveContents) === false) {
+        logmsg('[WARN] Unable to write apt non-interactive configuration at '.$aptNonInteractivePath);
+    } else {
+        @chmod($aptNonInteractivePath, 0644);
+        logmsg('Updated apt non-interactive configuration ('.$aptNonInteractivePath.')');
+    }
+} else {
+    logmsg('[SKIP] apt non-interactive configuration already up to date');
+}
+
+// Finish any interrupted package configuration before continuing.
+runStep('Completing pending dpkg configuration', 'dpkg --configure -a');
 
 function pmssRecordProfile(array $entry): void
 {
@@ -100,6 +156,39 @@ function aptCmd(string $args): string
     return 'DEBIAN_FRONTEND=noninteractive APT_LISTCHANGES_FRONTEND=none '
         .'apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold '
         .$args;
+}
+
+function killProcess(string $name, string $description): void
+{
+    exec('pgrep -x '.escapeshellarg($name).' >/dev/null 2>&1', $_, $status);
+    if ($status !== 0) {
+        logmsg("[SKIP] {$description} (no {$name} processes)");
+        return;
+    }
+    runStep($description, 'killall -9 '.escapeshellarg($name));
+}
+
+function disableUnitIfPresent(string $unit, string $description): void
+{
+    if (!is_dir('/run/systemd/system')) {
+        logmsg("[SKIP] {$description} (systemd unavailable)");
+        return;
+    }
+    exec('systemctl list-unit-files '.escapeshellarg($unit).' 2>/dev/null', $output, $status);
+    $found = false;
+    if ($status === 0) {
+        foreach ($output as $line) {
+            if (stripos($line, $unit) === 0) {
+                $found = true;
+                break;
+            }
+        }
+    }
+    if (!$found) {
+        logmsg("[SKIP] {$description} (unit {$unit} missing)");
+        return;
+    }
+    runStep($description, 'systemctl disable '.escapeshellarg($unit));
 }
 
 /**
@@ -178,8 +267,13 @@ runStep('Ensuring cgroup-bin package present', aptCmd('install -y -q cgroup-bin'
     runStep('Mounting /sys/fs/cgroup', 'mount /sys/fs/cgroup');
 }
 
-// Increase pids max, there was an issue with this and updates would halt due to pids max being reached. SSH unresponsive etc.
-runStep('Raising PID limit for root user slice', "sh -c 'echo 100000 > /sys/fs/cgroup/pids/user.slice/user-0.slice/pids.max'");
+// Increase pids max; skip gracefully on systems using unified cgroups without this path.
+$rootPidSlice = '/sys/fs/cgroup/pids/user.slice/user-0.slice/pids.max';
+if (file_exists($rootPidSlice)) {
+    runStep('Raising PID limit for root user slice', "sh -c 'echo 100000 > {$rootPidSlice}'");
+} else {
+    logmsg('[SKIP] Raising PID limit for root user slice (pids controller path missing)');
+}
 
 // Systemd slice configuration ensures proper process limits for users
 if (file_exists('/usr/lib/systemd/user-.slice.d/99-pmss.conf')) unlink('/usr/lib/systemd/user-.slice.d/99-pmss.conf');  // Remove obsolete defaults
@@ -251,7 +345,9 @@ runStep('Restarting sshd to load updated configuration', '/usr/bin/systemctl res
 
 
 // Install APT Packages etc.
-include_once '/scripts/lib/update/packages.php';
+
+include_once '/scripts/lib/update/apps/packages.php';
+
 
 // Clean up packages that are no longer required after upgrades
 runStep('Removing packages no longer required', aptCmd('autoremove -y'));
@@ -261,14 +357,14 @@ if ($distroVersion < 10) {
     runStep('Stopping lighttpd (init.d)', '/etc/init.d/lighttpd stop');
     runStep('Disabling lighttpd from sysvinit runlevels', 'update-rc.d lighttpd stop 2 3 4 5');
     runStep('Removing lighttpd sysvinit hooks', 'update-rc.d lighttpd remove');
-    runStep('Terminating lingering lighttpd processes', 'killall -9 lighttpd');
-    runStep('Terminating lingering php-cgi processes', 'killall -9 php-cgi');
+    killProcess('lighttpd', 'Terminating lingering lighttpd processes');
+    killProcess('php-cgi', 'Terminating lingering php-cgi processes');
     runStep('Ensuring nginx defaults set in sysvinit', 'update-rc.d nginx defaults');
 } else {
     runStep('Stopping lighttpd (systemd)', '/etc/init.d/lighttpd stop');
-    runStep('Disabling lighttpd systemd service', 'systemctl disable lighttpd');
-    runStep('Terminating lingering lighttpd processes', 'killall -9 lighttpd');
-    runStep('Terminating lingering php-cgi processes', 'killall -9 php-cgi');
+    disableUnitIfPresent('lighttpd', 'Disabling lighttpd systemd service');
+    killProcess('lighttpd', 'Terminating lingering lighttpd processes');
+    killProcess('php-cgi', 'Terminating lingering php-cgi processes');
     runStep('Enabling nginx systemd service', 'systemctl enable nginx');
 }
 
@@ -288,7 +384,7 @@ runStep('Setting default LANG in /etc/default/locale', "sed -i 's/LANG=en_US\\n/
 
 
 // Load application installers automatically (sorted for deterministic order)
-$apps = glob('/scripts/lib/apps/*.php');
+$apps = glob('/scripts/lib/update/apps/*.php');
 sort($apps);
 foreach ($apps as $app) {
     include_once $app;
@@ -325,7 +421,7 @@ foreach ($servicesToCheck AS $thisService) {
     if ($distroVersion < 10) {
         runStep("Disabling {$thisService} in sysvinit", "update-rc.d {$thisService} disable");
     } else {
-        runStep("Disabling {$thisService} systemd unit", "systemctl disable {$thisService}");
+        disableUnitIfPresent($thisService, "Disabling {$thisService} systemd unit");
     }
 }
 

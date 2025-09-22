@@ -5,30 +5,32 @@
 
 class UserFilesystem
 {
-    public static function listHomeUsers(): array
+    /**
+     * Enumerate home directory names living directly under /home.
+     */
+    public static function listHomeDirectories(): array
     {
-        $users = [];
+        $users      = [];
         $filterList = self::homeFilterList();
+        $homeDir    = '/home';
 
-        $homeDir = '/home';
         if ($directory = @opendir($homeDir)) {
-            while (false !== ($entry = readdir($directory))) {
-                if ($entry === '.' || $entry === '..' || strpos($entry, 'backup-') === 0) {
-                    continue;
+            try {
+                while (false !== ($entry = readdir($directory))) {
+                    if ($entry === '.' || $entry === '..' || strpos($entry, 'backup-') === 0) {
+                        continue;
+                    }
+                    if (in_array($entry, $filterList, true)) {
+                        continue;
+                    }
+                    $path = $homeDir.'/'.$entry;
+                    if (is_dir($path)) {
+                        $users[$entry] = true;
+                    }
                 }
-                if (in_array($entry, $filterList, true)) {
-                    continue;
-                }
-                $path = $homeDir.'/'.$entry;
-                if (is_dir($path)) {
-                    $users[$entry] = true;
-                }
+            } finally {
+                closedir($directory);
             }
-            closedir($directory);
-        }
-
-        foreach (self::passwdUsers() as $user) {
-            $users[$user] = true;
         }
 
         $names = array_keys($users);
@@ -36,12 +38,15 @@ class UserFilesystem
         return $names;
     }
 
-    private static function passwdUsers(): array
+    /**
+     * Enumerate users from /etc/passwd whose home directories live under /home.
+     */
+    public static function listPasswdUsers(): array
     {
         $names = [];
         $lines = @file('/etc/passwd', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         if ($lines === false) {
-            return $names;
+            return [];
         }
         $filterList = self::homeFilterList();
         foreach ($lines as $line) {
@@ -59,11 +64,30 @@ class UserFilesystem
             }
             $names[$name] = true;
         }
-        return array_keys($names);
+        $result = array_keys($names);
+        sort($result, SORT_NATURAL | SORT_FLAG_CASE);
+        return $result;
     }
 
+    /**
+     * Combined list of users discovered from filesystem and passwd data.
+     */
+    public static function listHomeUsers(): array
+    {
+        $combined = array_fill_keys(self::listHomeDirectories(), true);
+        foreach (self::listPasswdUsers() as $user) {
+            $combined[$user] = true;
+        }
+        $names = array_keys($combined);
+        sort($names, SORT_NATURAL | SORT_FLAG_CASE);
+        return $names;
+    }
+
+    /**
+     * Ignore service accounts that should not appear in tenant listings.
+     */
     private static function homeFilterList(): array
     {
-        return ['aquota.user','aquota.group','lost+found','ftp','srvadmin','srvapi','pmcseed','pmcdn','srvmgmt'];
+        return ['aquota.user', 'aquota.group', 'lost+found', 'ftp', 'srvadmin', 'srvapi', 'pmcseed', 'pmcdn', 'srvmgmt'];
     }
 }

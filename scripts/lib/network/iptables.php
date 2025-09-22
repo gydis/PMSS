@@ -27,7 +27,7 @@ function networkParseMonitoringCommands(string $raw): array
             continue;
         }
         $line = trim(preg_replace('/^\/?sbin\/iptables\s+/', '', $line));
-        if (str_starts_with($line, 'iptables ')) {
+        if (strpos($line, 'iptables ') === 0) {
             $line = trim(substr($line, strlen('iptables ')));
         }
         if ($line === '' || strncmp($line, '-F', 2) === 0) {

@@ -7,7 +7,7 @@ class UserValidator
 {
     public const REQUIRED_FIELDS = ['rtorrentRam', 'rtorrentPort', 'quota', 'quotaBurst'];
 
-    public static function isValidUsername(mixed $username): bool
+    public static function isValidUsername($username): bool
     {
         return is_string($username) && preg_match('/^[a-zA-Z0-9._-]+$/', $username) === 1;
     }

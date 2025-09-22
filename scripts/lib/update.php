@@ -262,6 +262,31 @@ function generateMotd(): void {
         $networkSpeed = 'N/A';
     }
 
+    $colorize = static function (string $text, string $color): string {
+        return "\e[{$color}m{$text}\e[0m";
+    };
+
+    $serviceStatus = static function (string $service, ?string $configPath, string $name) use ($colorize): string {
+        if ($configPath !== null && !file_exists($configPath)) {
+            return $colorize('not configured', '33');
+        }
+        if (!is_dir('/run/systemd/system')) {
+            return $colorize('unknown', '33');
+        }
+        exec('systemctl is-active --quiet '.escapeshellarg($service), $out, $activeRc);
+        if ($activeRc === 0) {
+            return $colorize('active', '32');
+        }
+        exec('systemctl is-enabled --quiet '.escapeshellarg($service), $out, $enabledRc);
+        if ($enabledRc !== 0) {
+            return $colorize('disabled', '33');
+        }
+        return $colorize('inactive', '31');
+    };
+
+    $wireguardStatus = $serviceStatus('wg-quick@wg0', '/etc/wireguard/wg0.conf', 'WireGuard');
+    $openvpnStatus = $serviceStatus('openvpn@openvpn', '/etc/openvpn/openvpn.conf', 'OpenVPN');
+
     $replacements = [
         '%HOSTNAME%'        => $serverHostname,
         '%SERVER_IP%'       => $serverIp,
@@ -275,6 +300,8 @@ function generateMotd(): void {
         '%UPTIME%'          => $uptime,
         '%KERNEL_VERSION%'  => $kernelVersion,
         '%NETWORK_SPEED%'   => $networkSpeed,
+        '%WIREGUARD_STATUS%' => $wireguardStatus,
+        '%OPENVPN_STATUS%'   => $openvpnStatus,
     ];
 
     foreach ($replacements as $p => $v) {

@@ -4,7 +4,7 @@
  * Render and apply the ProFTPD configuration using project templates.
  */
 
-echo date('Y-m-d H:i:s') . ': Making ProFTPd configuration' . "\n";
+echo date('Y-m-d H:i:s').': Making ProFTPd configuration' . "\n";
 
 $configTemplate = @file_get_contents('/etc/seedbox/config/template.proftpd');
 $hostnameRaw    = @file_get_contents('/etc/hostname');
@@ -13,17 +13,18 @@ if ($configTemplate === false || $hostnameRaw === false) {
     die('No data, hostname or config template is empty!');
 }
 
-$hostname = trim($hostnameRaw);
-$hostname = strtolower($hostname);
-$hostname = preg_replace('/[^a-z0-9.-]/', '', $hostname);
-if ($hostname === '') {
-    $hostname = 'localhost';
-}
+$hostname = sanitizeHostname($hostnameRaw);
+$tlsBlock = buildTlsConfiguration($hostname);
+
 $rendered = str_replace(
     ['%SERVERNAME%', '%TLS_CONFIGURATION%'],
-    [$hostname, buildTlsConfiguration($hostname)],
+    [$hostname, $tlsBlock],
     $configTemplate
 );
+
+if ($tlsBlock === '') {
+    $rendered = preg_replace('#\n?<IfModule mod_tls\\.c>.*?</IfModule>#s', '', $rendered);
+}
 
 $logDir = '/var/log/proftpd';
 $runDir = '/var/run/proftpd';
@@ -37,12 +38,30 @@ if (!is_dir($runDir) && !@mkdir($runDir, 0750, true)) {
 
 file_put_contents('/etc/proftpd/proftpd.conf', $rendered);
 
+$rc = 0;
 if (is_dir('/run/systemd/system')) {
-    passthru('systemctl restart proftpd');
+    passthru('systemctl restart proftpd', $rc);
 } elseif (file_exists('/etc/init.d/proftpd')) {
-    passthru('/etc/init.d/proftpd restart');
+    passthru('/etc/init.d/proftpd restart', $rc);
 }
 
+if (($rc ?? 0) !== 0) {
+    fwrite(STDERR, "Warning: ProFTPD restart returned code {$rc}.\n");
+}
+
+/**
+ * Normalise the hostname for template substitution.
+ */
+function sanitizeHostname(string $raw): string
+{
+    $hostname = strtolower(trim($raw));
+    $hostname = preg_replace('/[^a-z0-9.-]/', '', $hostname);
+    return $hostname === '' ? 'localhost' : $hostname;
+}
+
+/**
+ * Build the TLS configuration block when certificates are available.
+ */
 function buildTlsConfiguration(string $hostname): string
 {
     $candidates = [];
@@ -50,7 +69,7 @@ function buildTlsConfiguration(string $hostname): string
     if ($trimmed !== '') {
         $candidates[] = "/etc/letsencrypt/live/{$trimmed}";
         if (strpos($trimmed, '.') !== false) {
-            [$sub, $domain] = explode('.', $trimmed, 2);
+            [, $domain] = explode('.', $trimmed, 2);
             $candidates[] = "/etc/letsencrypt/live/*.{$domain}";
         }
     }
@@ -74,5 +93,5 @@ function buildTlsConfiguration(string $hostname): string
         }
     }
 
-    return "    # TLS disabled - certificate bundle not available\n    TLSEngine                     off";
+    return '';
 }

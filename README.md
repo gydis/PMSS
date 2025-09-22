@@ -19,7 +19,8 @@ More information available at https://wiki.pulsedmedia.com/index.php/PM_Software
 You can find information for common tasks such as adding/creating/suspending users at https://wiki.pulsedmedia.com/index.php/Category:PM_Software_Stack_Guides.
 
 For a quick maintenance checklist covering dry-runs, structured logging and
-tests, see `docs/maintenance.md`.
+tests, see `docs/maintenance.md`. WireGuard usage notes are available in
+`docs/wireguard.md`.
 
 ### Installation
 
