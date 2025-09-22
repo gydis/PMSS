@@ -1,5 +1,19 @@
 #!/usr/bin/php
 <?php
+/**
+ * Terminate tenant helper.
+ *
+ * - Prompts for confirmation, kills user processes, and frees reserved
+ *   rTorrent port assignments.
+ * - Removes the home directory, screen sockets, nginx snippets, and releases
+ *   lighttpd port reservations.
+ *
+ * This flow has been stable in production for years; avoid modifying unless a
+ * behavioural bug is confirmed. Coordinate changes with the platform team.
+ *
+ * @author  Aleksi Ursin <aleksi@magnacapax.fi>
+ * @copyright 2010-2025 Magna Capax Finland Oy
+ */
 require_once __DIR__.'/lib/users.php';
 $continue = '-';
 
@@ -41,6 +55,7 @@ passthru("killall -9 -u {$username}");  // Sometimes things just don't dieee!
 $portFile = "/home/{$username}/.rtorrent.rc";
 $ports = [];
 if (file_exists($portFile)) {
+    // #TODO consider parsing ports via shared helper instead of ad-hoc regex when refactoring rtorrent config handling.
     $configLines = file($portFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     foreach ($configLines as $line) {
         $line = trim($line);
@@ -81,6 +96,7 @@ passthru("/scripts/util/portManager.php release {$username} lighttpd");
 
 $db = new users();
 if (function_exists('posix_getpwnam') && posix_getpwnam($username) !== false) {
+    // #TODO explore force-removal path when passwd entry lingers to keep DB in sync automatically.
     fwrite(STDERR, "Warning: {$username} still present in /etc/passwd; skipping DB removal.\n");
 } else {
     $db->removeUser($username);

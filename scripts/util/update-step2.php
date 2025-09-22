@@ -345,7 +345,7 @@ runStep('Restarting sshd to load updated configuration', '/usr/bin/systemctl res
 
 
 // Install APT Packages etc.
-include_once '/scripts/lib/apps/packages.php';
+include_once '/scripts/lib/update/apps/packages.php';
 
 // Clean up packages that are no longer required after upgrades
 runStep('Removing packages no longer required', aptCmd('autoremove -y'));
@@ -382,7 +382,7 @@ runStep('Setting default LANG in /etc/default/locale', "sed -i 's/LANG=en_US\\n/
 
 
 // Load application installers automatically (sorted for deterministic order)
-$apps = glob('/scripts/lib/apps/*.php');
+$apps = glob('/scripts/lib/update/apps/*.php');
 sort($apps);
 foreach ($apps as $app) {
     include_once $app;
