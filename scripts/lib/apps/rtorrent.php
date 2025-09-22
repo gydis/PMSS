@@ -4,7 +4,7 @@
 //
 // This can be ran independently too
 
-$rtorrentVersion = shell_exec('rtorrent -h');
+$rtorrentVersionOutput = trim((string) shell_exec('rtorrent -n -V 2>&1'));
 // Choose version based on which debian version - 0.9.6 does not compile on deb10, but 0.9.8 has severe issues as well
 $debianVersion = file_get_contents('/etc/debian_version');
 if ($debianVersion[0] == 1) {
@@ -18,7 +18,19 @@ $rtorrentCompileOptions = '--with-xmlrpc-c --disable-debug';
 $rtorrentCompileOptionsLib = '--with-udns --with-posix-fallocate --disable-debug';
 $xmlrpcVersion = '3116';
 
-if (strpos($rtorrentVersion, "version {$rtorrentVersionTarget}.") === false) {  // Yeah i know kinda stupid place to look if we got the latest but ...
+// Determine whether the installed binary already matches the requested build.
+$needsUpdate = true;
+$normalisedTargets = [$rtorrentVersionTarget, str_replace('-udns', '', $rtorrentVersionTarget)];
+if ($rtorrentVersionOutput !== '') {
+    foreach ($normalisedTargets as $target) {
+        if ($target !== '' && strpos($rtorrentVersionOutput, $target) !== false) {
+            $needsUpdate = false;
+            break;
+        }
+    }
+}
+
+if ($needsUpdate) {  // Yeah i know kinda stupid place to look if we got the latest but ...
     echo "*** Updating rTorrent\n";
     
     shell_exec('rm -rf /usr/local/lib/libtorrent*; ldconfig;'); // Clean up old libtorrent installed files
@@ -76,4 +88,6 @@ if (strpos($rtorrentVersion, "version {$rtorrentVersionTarget}.") === false) {  
     
 
     echo "*** Update done - rtorrent instances will restart within minute\n";
+} else {
+    echo "*** rTorrent already at target version ({$rtorrentVersionTarget}); skipping build\n";
 }

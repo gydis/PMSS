@@ -66,3 +66,5 @@ file_put_contents("/etc/watchdog.conf", $configContent);
 passthru('systemctl enable watchdog; systemctl start watchdog;');
 
 echo "*** Watchdog successfully installed + configured\n";
+
+*/
