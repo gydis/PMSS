@@ -18,6 +18,9 @@ requireRoot();
 
 putenv('DEBIAN_FRONTEND=noninteractive');
 putenv('APT_LISTCHANGES_FRONTEND=none');
+putenv('UCF_FORCE_CONFOLD=1');
+putenv('UCF_FORCE_CONFNEW=0');
+putenv('NEEDRESTART_MODE=a');
 
 
 // logmsg is defined in /scripts/update.php when this file is loaded from there.
@@ -71,6 +74,30 @@ if ($distroVersionRaw === '') {
     logmsg('Could not detect distro version; defaulting to 0');
 }
 $distroVersion = (int) filter_var($distroVersionRaw, FILTER_SANITIZE_NUMBER_INT) ?: 0;
+
+// Ensure apt consistently operates without interactive prompts.
+$aptNonInteractivePath = '/etc/apt/apt.conf.d/90pmss-noninteractive';
+$aptNonInteractiveContents = <<<APTCONF
+Dpkg::Options {
+    "--force-confdef";
+    "--force-confold";
+}
+APT::Get::Assume-Yes "true";
+APT::Color "0";
+DPkg::Use-Pty "0";
+APTCONF;
+
+$existingAptConfig = @file_get_contents($aptNonInteractivePath);
+if ($existingAptConfig === false || trim($existingAptConfig) !== trim($aptNonInteractiveContents)) {
+    if (@file_put_contents($aptNonInteractivePath, $aptNonInteractiveContents) === false) {
+        logmsg('[WARN] Unable to write apt non-interactive configuration at '.$aptNonInteractivePath);
+    } else {
+        @chmod($aptNonInteractivePath, 0644);
+        logmsg('Updated apt non-interactive configuration ('.$aptNonInteractivePath.')');
+    }
+} else {
+    logmsg('[SKIP] apt non-interactive configuration already up to date');
+}
 
 function pmssRecordProfile(array $entry): void
 {
