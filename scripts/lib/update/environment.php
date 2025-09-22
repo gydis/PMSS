@@ -19,22 +19,6 @@ Dpkg::Options {
     "--force-confdef";
     "--force-confold";
 }
-
-if (!function_exists('pmssApplyDpkgSelections')) {
-    /**
-     * Apply the baseline dpkg selection snapshot so required packages stay present.
-     */
-    function pmssApplyDpkgSelections(): void
-    {
-        $selections = __DIR__.'/dpkg/selections.txt';
-        if (!is_readable($selections)) {
-            return;
-        }
-        $cmd = sprintf('dpkg --set-selections < %s', escapeshellarg($selections));
-        runStep('Applying dpkg selection baseline', $cmd);
-        runStep('Installing packages from selection baseline', 'apt-get dselect-upgrade -y');
-    }
-}
 APT::Get::Assume-Yes "true";
 APT::Color "0";
 DPkg::Use-Pty "0";
@@ -61,7 +45,30 @@ if (!function_exists('pmssCompletePendingDpkg')) {
      */
     function pmssCompletePendingDpkg(): void
     {
+        // #TODO replace special-casing with a generic unit-unmask helper when more services require it.
+        if (is_dir('/run/systemd/system')) {
+            $state = trim((string) @shell_exec('systemctl is-enabled proftpd.service 2>/dev/null'));
+            if ($state === 'masked') {
+                runCommand('systemctl unmask proftpd.service');
+            }
+        }
         runStep('Completing pending dpkg configuration', 'dpkg --configure -a');
+    }
+}
+
+if (!function_exists('pmssApplyDpkgSelections')) {
+    /**
+     * Apply the baseline dpkg selection snapshot so required packages stay present.
+     */
+    function pmssApplyDpkgSelections(): void
+    {
+        $selections = __DIR__.'/dpkg/selections.txt';
+        if (!is_readable($selections)) {
+            return;
+        }
+        $cmd = sprintf('dpkg --set-selections < %s', escapeshellarg($selections));
+        runStep('Applying dpkg selection baseline', $cmd);
+        runStep('Installing packages from selection baseline', 'apt-get dselect-upgrade -y');
     }
 }
 

@@ -7,7 +7,12 @@
  * already matches.
  */
 
-require_once dirname(__DIR__, 2).'/runtime.php';
+$runtimePath = dirname(__DIR__).'/../runtime.php';
+// #TODO consolidate update app bootstrap (runtime inclusion) into shared helper to avoid per-script duplication.
+if (!@include_once $runtimePath) {
+    fwrite(STDERR, "Radarr updater: missing runtime helper at {$runtimePath}, skipping install.\n");
+    return;
+}
 
 const RADARR_VERSION_RECORD = '/etc/seedbox/config/app-versions/radarr';
 const RADARR_INSTALL_PATH   = '/opt/Radarr';
