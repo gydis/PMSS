@@ -13,10 +13,12 @@ echo "### Install gdrivefs\n";
 passthru('pip install --upgrade gdrivefs');
 
 echo "### Install/Update Flexget:\n";
-passthru('pip install --upgrade pyopenssl ndg-httpsclient cryptography; pip install --upgrade setuptools funcsigs functools32 chardet==3.0.3 certifi=2017.4.17; pip install --upgrade flexget;');
+// Keep dependency pins in place but ensure the requirement syntax stays valid for pip.
+passthru('pip install --upgrade pyopenssl ndg-httpsclient cryptography');
+passthru("pip install --upgrade setuptools funcsigs functools32 'chardet==3.0.3' 'certifi==2017.4.17'");
+passthru('pip install --upgrade flexget');
 
 
 //pip3 install youtube_dl
 `pip3 install --upgrade youtube_dl`; 
-
 

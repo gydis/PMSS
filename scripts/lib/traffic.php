@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__.'/traffic/storage.php';
+
 class trafficStatistics {
 
 	public function getData($user, $timePeriod = 5050) {
@@ -25,21 +27,9 @@ class trafficStatistics {
     }
     
     public function saveUserTraffic( $user, $data ) {
-        $trafficDataFile = '.trafficData';
-        $trafficDataFileVar = $user;
-        
-        if (strpos($user, '-localnet')) {
-                $trafficDataFile = '.trafficDataLocal';
-                $trafficDataFileVar = $user;    // keep the -localnet
-                $user = str_replace('-localnet', '', $user);
-        }
-        
-        $saveData = serialize( $data );
-        if (file_exists("/home/{$user}")) file_put_contents("/home/{$user}/{$trafficDataFile}", $saveData);
-        if (!file_exists('/var/run/pmss/trafficStats') ) mkdir('/var/run/pmss/trafficStats', 0600);
-        
-        file_put_contents('/var/run/pmss/trafficStats/' . $trafficDataFileVar, $saveData);
-    
+        $storage = new \TrafficStorage();
+        $storage->ensureRuntime();
+        $storage->save($user, $data);
     }
 
 }

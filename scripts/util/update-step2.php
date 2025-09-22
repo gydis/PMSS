@@ -247,6 +247,7 @@ $repoTemplates = [
     'buster'   => loadRepoTemplate('buster', 'logmsg'),
     'bullseye' => loadRepoTemplate('bullseye', 'logmsg'),
     'bookworm' => loadRepoTemplate('bookworm', 'logmsg'),
+    'trixie'   => loadRepoTemplate('trixie', 'logmsg'),
 ];
 
 updateAptSources(
@@ -284,6 +285,9 @@ runStep('Restarting sshd to load updated configuration', '/usr/bin/systemctl res
 
 // Install APT Packages etc.
 include_once '/scripts/lib/apps/packages.php';
+
+// Clean up packages that are no longer required after upgrades
+runStep('Removing packages no longer required', aptCmd('autoremove -y'));
 
 
 if ($distroVersion < 10) {
