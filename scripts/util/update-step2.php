@@ -345,7 +345,9 @@ runStep('Restarting sshd to load updated configuration', '/usr/bin/systemctl res
 
 
 // Install APT Packages etc.
+
 include_once '/scripts/lib/update/apps/packages.php';
+
 
 // Clean up packages that are no longer required after upgrades
 runStep('Removing packages no longer required', aptCmd('autoremove -y'));

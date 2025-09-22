@@ -1,7 +1,7 @@
 <?php
 namespace PMSS\Tests;
 
-require_once dirname(__DIR__).'/apps/packages/helpers.php';
+require_once dirname(__DIR__).'/update/packages/helpers.php';
 
 class PackagesHelpersTest extends TestCase
 {
