@@ -8,6 +8,8 @@ $openvpnClientConfigHostname = $serverHostname;
 if (strpos($openvpnClientConfigHostname, '.pulsedmedia.com') === false) $openvpnClientConfigHostname .= '.pulsedmedia.com';
 $openvpnClientConfigFilename = str_replace('.', '-', $openvpnClientConfigHostname);
 
+@mkdir('/etc/openvpn', 0755, true);
+
 // Detect old config //
 if (file_exists("/etc/openvpn/easy-rsa/2.0")) {
     echo "#### Found old EasyRSA config, moving it away";
@@ -41,13 +43,28 @@ EOF;
 
     // Create the server config and restart OpenVPN //
     `cd /etc/openvpn/easy-rsa/; ./easyrsa clean-all; ./easyrsa build-ca nopass; ./easyrsa build-server-full server nopass; ./easyrsa gen-dh; cd -`;
-    `cp -p /etc/seedbox/config/template.openvpn.server.config /etc/openvpn/openvpn.conf; systemctl restart openvpn@openvpn`;
+    if (file_exists('/etc/seedbox/config/template.openvpn.server.config')) {
+        `cp -p /etc/seedbox/config/template.openvpn.server.config /etc/openvpn/openvpn.conf`;
+    }
+
+    if (is_dir('/run/systemd/system')) {
+        passthru('systemctl restart openvpn@openvpn || systemctl restart openvpn || true');
+    } elseif (file_exists('/etc/init.d/openvpn')) {
+        passthru('/etc/init.d/openvpn restart');
+    }
     echo "\t#### OpenVPN Configured. Create client config + cert package\n";
 }
 
 // Restart on template change //
-if ( file_get_contents('/etc/seedbox/config/template.openvpn.server.config') !== file_get_contents('/etc/openvpn/openvpn.conf') )
-	`cp -p /etc/seedbox/config/template.openvpn.server.config /etc/openvpn/openvpn.conf; systemctl restart openvpn@openvpn`;
+if (file_exists('/etc/openvpn/openvpn.conf') && file_exists('/etc/seedbox/config/template.openvpn.server.config')
+    && file_get_contents('/etc/seedbox/config/template.openvpn.server.config') !== file_get_contents('/etc/openvpn/openvpn.conf')) {
+    `cp -p /etc/seedbox/config/template.openvpn.server.config /etc/openvpn/openvpn.conf`;
+    if (is_dir('/run/systemd/system')) {
+        passthru('systemctl restart openvpn@openvpn || systemctl restart openvpn || true');
+    } elseif (file_exists('/etc/init.d/openvpn')) {
+        passthru('/etc/init.d/openvpn restart');
+    }
+}
 
 // Create OpenVPN client config for this machine //
 if (!file_exists("/home/openvpn-{$openvpnClientConfigFilename}.ovpn")) {
@@ -61,7 +78,7 @@ if (!file_exists("/home/openvpn-{$openvpnClientConfigFilename}.ovpn")) {
 }
 
 // Copy out CA certificate if it isn't in /home yet //
-if (!file_exists("/home/openvpn-{$openvpnClientConfigFilename}.crt")) {
+if (!file_exists("/home/openvpn-{$openvpnClientConfigFilename}.crt") && file_exists('/etc/openvpn/easy-rsa/pki/ca.crt')) {
     `cp -p /etc/openvpn/easy-rsa/pki/ca.crt /home/openvpn-{$openvpnClientConfigFilename}.crt`;
 }
 
@@ -74,4 +91,3 @@ if (!file_exists('/etc/skel/www/openvpn-config.tgz') &&
         foreach($users AS $thisUser)
             updateUserFile('www/openvpn-config.tgz', $thisUser);
 }
-

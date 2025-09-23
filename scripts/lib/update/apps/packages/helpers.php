@@ -51,13 +51,29 @@ function pmssFlushPackageQueue(): void
         if (empty($packages)) {
             continue;
         }
-        $pkgArgs = implode(' ', array_map('escapeshellarg', $packages));
+
+        [$installable, $missing] = pmssFilterAvailablePackages($packages);
+        if (!empty($missing)) {
+            pmssLogPackageNotice('Skipping unavailable packages: '.implode(', ', $missing));
+        }
+        if (empty($installable)) {
+            continue;
+        }
+
+        $pkgArgs = implode(' ', array_map('escapeshellarg', $installable));
         if ($target === PMSS_PACKAGE_QUEUE_DEFAULT) {
             $cmd = 'apt-get install -y '.$pkgArgs;
-            runStep('Installing packages', $cmd);
+            $label = 'Installing packages';
         } else {
             $cmd = sprintf('apt-get install -y -t %s %s', escapeshellarg($target), $pkgArgs);
-            runStep('Installing packages ('.$target.')', $cmd);
+            $label = 'Installing packages ('.$target.')';
+        }
+
+        $rc = runStep($label, $cmd);
+        if ($rc !== 0) {
+            $context = $target === PMSS_PACKAGE_QUEUE_DEFAULT ? 'package queue' : 'package queue '.$target;
+            runStep('Attempting apt fix-broken install ('.$context.')', 'apt-get --fix-broken install -y');
+            runStep($label.' retry', $cmd);
         }
     }
 
@@ -75,6 +91,15 @@ function pmssQueuePostInstallCommand(string $description, string $command): void
 {
     global $PMSS_POST_INSTALL_COMMANDS;
     $PMSS_POST_INSTALL_COMMANDS[] = [$description, $command];
+}
+
+function pmssLogPackageNotice(string $message): void
+{
+    if (function_exists('logmsg')) {
+        logmsg($message);
+    } else {
+        echo $message."\n";
+    }
 }
 
 /**
@@ -162,6 +187,28 @@ function pmssInstallBestEffort(array $items, string $label = ''): void
         return;
     }
     pmssQueuePackages($selection);
+}
+
+/**
+ * Filter a package list into installable vs. missing entries.
+ */
+function pmssFilterAvailablePackages(array $packages): array
+{
+    $installable = [];
+    $missing     = [];
+
+    foreach ($packages as $pkg) {
+        if ($pkg === '') {
+            continue;
+        }
+        if (pmssPackageAvailable($pkg)) {
+            $installable[] = $pkg;
+        } else {
+            $missing[] = $pkg;
+        }
+    }
+
+    return [$installable, $missing];
 }
 
 /**

@@ -96,3 +96,91 @@ if (!function_exists('pmssReapplyLocaleDefinitions')) {
         runStep('Setting default LANG in /etc/default/locale', "sed -i 's/LANG=en_US\\n/LANG=en_US.UTF-8/g' /etc/default/locale");
     }
 }
+
+if (!function_exists('pmssEnsureLegacySysctlBaseline')) {
+    /**
+     * Recreate the legacy BFQ/sysctl configuration shipped with PMSS.
+     */
+    function pmssEnsureLegacySysctlBaseline(?callable $logger = null): void
+    {
+        $log     = pmssSelectLogger($logger);
+        $target  = '/etc/sysctl.d/1-pmss-defaults.conf';
+        $content = <<<CONF
+# Pulsed Media Config
+block/sda/queue/scheduler = bfq
+block/sdb/queue/scheduler = bfq
+block/sdc/queue/scheduler = bfq
+block/sdd/queue/scheduler = bfq
+block/sde/queue/scheduler = bfq
+block/sdf/queue/scheduler = bfq
+
+block/sda/queue/read_ahead_kb = 1024
+block/sdb/queue/read_ahead_kb = 1024
+block/sdc/queue/read_ahead_kb = 1024
+block/sdd/queue/read_ahead_kb = 1024
+block/sde/queue/read_ahead_kb = 1024
+block/sdf/queue/read_ahead_kb = 1024
+
+net.ipv4.ip_forward = 1
+CONF;
+
+        $existing = @file_get_contents($target);
+        if ($existing !== false && trim($existing) === trim($content)) {
+            $log('[SKIP] Legacy sysctl defaults already present');
+            return;
+        }
+
+        if (!is_dir(dirname($target))) {
+            @mkdir(dirname($target), 0755, true);
+        }
+        @file_put_contents($target, $content.PHP_EOL);
+        runStep('Reloading sysctl configuration', 'sysctl --system');
+        $log('Refreshed legacy sysctl defaults at '.$target);
+    }
+}
+
+if (!function_exists('pmssConfigureRootShellDefaults')) {
+    /**
+     * Ensure root shell defaults mirror the historical installer behaviour.
+     */
+    function pmssConfigureRootShellDefaults(?callable $logger = null): void
+    {
+        $log    = pmssSelectLogger($logger);
+        $bashrc = '/root/.bashrc';
+        $lines  = file_exists($bashrc) ? file($bashrc, FILE_IGNORE_NEW_LINES) : [];
+        if ($lines === false) {
+            $lines = [];
+        }
+
+        $updates = [];
+        $alias   = "alias ls='ls --color=auto'";
+        $pathAdd = 'PATH=$PATH:/scripts';
+
+        if (!in_array($alias, $lines, true)) {
+            $lines[]   = $alias;
+            $updates[] = $alias;
+        }
+        if (!in_array($pathAdd, $lines, true)) {
+            $lines[]   = $pathAdd;
+            $updates[] = $pathAdd;
+        }
+
+        if ($updates === []) {
+            $log('[SKIP] Root shell defaults already configured');
+            return;
+        }
+
+        @file_put_contents($bashrc, implode(PHP_EOL, $lines).PHP_EOL);
+        $log('Appended root shell defaults: '.implode(', ', $updates));
+    }
+}
+
+if (!function_exists('pmssProtectHomePermissions')) {
+    /**
+     * Match the historical chmod applied by install.sh to /home.
+     */
+    function pmssProtectHomePermissions(): void
+    {
+        runStep('Restricting world access to /home', 'chmod o-rw /home');
+    }
+}

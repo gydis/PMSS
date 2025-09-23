@@ -1,5 +1,11 @@
 <?php
 # Add pyLoad
+$distroVersion = (int) (getenv('PMSS_DISTRO_VERSION') ?: 0);
+if ($distroVersion >= 12) {
+    echo "## Skipping pyLoad cli install on Debian {$distroVersion}\n";
+    return;
+}
+
 if (!file_exists('/usr/share/pyload')) {
     echo "## Installing pyLoad cli\n";
     //passthru("wget http://pulsedmedia.com/remote/pkg/pyload-cli-v0.4.9-all.deb -O /tmp/pyload-cli-v0.4.9-all.deb");
@@ -8,4 +14,3 @@ if (!file_exists('/usr/share/pyload')) {
     //passthru("apt-get install -y python-pycurl python-crypto python-central");
     passthru("dpkg -i /tmp/pyload.deb");
 }
-

@@ -59,17 +59,25 @@ scripts/lib/update/networking.php      # network template seeding & rollout
 scripts/lib/update/runtime/*           # shared runStep/logging/profile helpers
 ```
 
+Environment hints captured by `install.sh` are passed via `PMSS_HOSTNAME`,
+`PMSS_SKIP_HOSTNAME`, `PMSS_QUOTA_MOUNT`, and `PMSS_SKIP_QUOTA`; phase 2 honors
+those flags when reapplying legacy hostname/quota defaults.
+
 Execution outline:
 1. Detect distro name/version/codename and ensure `update.php` is up to date.
 2. Enforce non-interactive apt settings and finish any pending dpkg configs.
-3. Prepare the host (cgroups, systemd slices, base permissions, MOTD, locales).
-4. Apply repository templates, refresh apt indexes, migrate legacy files.
-5. Run application installers under `scripts/lib/update/apps/*.php`.
-6. Configure the web stack, disable legacy daemons, and install supporting
+3. Immediately refresh APT repositories and install every queued package _before_ any
+   other orchestration (this ordering is mandatory for all future regressions).
+4. Prepare the host (cgroups, systemd slices, base permissions, MOTD, locales) and
+   reapply legacy installer defaults (sysctl tuning, root shell config, `/home`
+   permissions, hostname/quota overrides exported by `install.sh`).
+5. Apply repository templates, refresh apt indexes, migrate legacy files.
+6. Run application installers under `scripts/lib/update/apps/*.php`.
+7. Configure the web stack, disable legacy daemons, and install supporting
    packages (e.g., mediainfo, Let’s Encrypt helpers).
-7. Update every user environment via `pmssUpdateUserEnvironment` and rescan
+8. Update every user environment via `pmssUpdateUserEnvironment` and rescan
    skeletons, crontabs, and logrotate policies.
-8. Reapply network templates, apply security hardening, summarise profiling, and
+9. Reapply network templates, apply security hardening, summarise profiling, and
    log completion markers.
 
 Every step flows through the shared `runStep()` helper which logs to
@@ -96,7 +104,7 @@ Dry-run a release update to inspect logging only:
 ## Operational Tips
 
 - Always run `php -l scripts/update.php` and
-  `php scripts/lib/tests/Runner.php` after touching update logic.
+  `php scripts/lib/tests/development/Runner.php` after touching update logic.
 - Check `/var/log/pmss-update.jsonl` for a structured summary of the last run;
   a missing `update_step2_end` event typically means phase 2 was skipped.
 - When developing helpers under `scripts/lib/update`, mirror the existing

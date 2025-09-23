@@ -12,7 +12,13 @@ function pmssInstallBaseTools(): void
 
 function pmssInstallSystemUtilities(int $distroVersion): void
 {
-    pmssQueuePackages(['screen', 'mc', 'wget', 'gawk', 'subversion', 'libtool', 'libncurses5', 'sqlite', 'locate', 'ntpdate']);
+    pmssQueuePackages(['screen', 'mc', 'wget', 'gawk', 'subversion', 'libtool', 'sqlite', 'locate', 'ntpdate', 'build-essential', 'pkg-config', 'autoconf', 'automake', 'python3', 'python3-pip', 'python3-venv', 'python3-dev']);
+    pmssInstallBestEffort([
+        ['libncurses5', 'libncurses6'],
+    ], 'ncurses runtime');
+    pmssInstallBestEffort([
+        ['libncurses5-dev', 'libncurses-dev'],
+    ], 'ncurses development headers');
     pmssInstallBestEffort([
         ['python3-pycurl', 'python-pycurl'],
         ['python3-crypto', 'python-crypto'],

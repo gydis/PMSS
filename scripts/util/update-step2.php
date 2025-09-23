@@ -27,6 +27,7 @@ require_once __DIR__.'/../lib/update/services/certificates.php';
 require_once __DIR__.'/../lib/update/services/security.php';
 require_once __DIR__.'/../lib/update/userMaintenance.php';
 require_once __DIR__.'/../lib/update/networking.php';
+require_once __DIR__.'/../lib/update/services/bootstrap.php';
 
 requireRoot();
 
@@ -46,6 +47,10 @@ if ($repoVersion === 0 && $reportedVersion > 0) {
 if ($repoVersion !== 0 && $reportedVersion !== 0 && $repoVersion !== $reportedVersion) {
     $repoLogMessage = sprintf('Repository version mapped via codename %s -> %d (reported=%s)', $lsbCodename !== '' ? $lsbCodename : 'unknown', $repoVersion, $distroVersion);
 }
+
+putenv('PMSS_DISTRO_NAME='.$distroName);
+putenv('PMSS_DISTRO_VERSION='.(string) $reportedVersion);
+putenv('PMSS_DISTRO_CODENAME='.$lsbCodename);
 
 putenv('DEBIAN_FRONTEND=noninteractive');
 putenv('APT_LISTCHANGES_FRONTEND=none');
@@ -88,17 +93,22 @@ require_once __DIR__.'/../lib/update/users.php';
 logmsg('update-step2.php starting');
 pmssLogJson(['event' => 'phase', 'name' => 'update-step2', 'status' => 'start']);
 
-// Ensure legacy soft.sh flow self-updates before we continue.
-pmssEnsureLatestUpdater();
-
-// Refresh repositories and queue packages up front so later tasks see required binaries.
+// Refresh repositories and install queued packages before any other orchestration.
 pmssRefreshRepositories($distroName, $repoVersion, 'logmsg');
 pmssAutoremovePackages();
 include_once '/scripts/lib/update/apps/packages.php';
 pmssFlushPackageQueue();
 pmssAutoremovePackages();
+
+// Only after package installation has stabilised do we update legacy soft.sh.
+pmssEnsureLatestUpdater();
 pmssMigrateLegacyLocalnet();
 pmssApplyRuntimeTemplates();
+pmssApplyHostnameConfig('logmsg');
+pmssConfigureQuotaMount('logmsg');
+pmssEnsureLegacySysctlBaseline('logmsg');
+pmssConfigureRootShellDefaults('logmsg');
+pmssProtectHomePermissions();
 
 // --- Basic system preparation ---
 pmssEnsureCgroupsConfigured('logmsg');

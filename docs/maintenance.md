@@ -4,10 +4,10 @@ This short checklist makes it easy to rehearse and diagnose an update.
 
 ## 1. Run The Tests
 ```
-php scripts/lib/tests/Runner.php
+php scripts/lib/tests/development/Runner.php
 ```
-The suite validates the version-spec parser and metadata writer. All tests
-should pass before packaging or deploying changes.
+Runs the development suite (self-contained, no system changes). Ensure it
+passes before packaging or deploying changes.
 
 ## 2. Dry-Run The Updater
 ```
@@ -54,3 +54,15 @@ testing before production rollout.
   3. Invoke `update.php` with any positional arguments supplied by the operator.
 - To refresh a snapshot: run `dpkg --get-selections > selections-debianXX.txt`
   on a live host, then remove any `deinstall` entries before committing.
+- After provisioning on a real host, gather a human-readable snapshot with:
+```
+/scripts/util/systemTest.php
+```
+This lists binary versions, configuration presence, and other health probes for
+the production environment.
+- For machine-readable output suitable for dashboards or pipelines, run:
+```
+/scripts/util/componentStatus.php --json
+```
+The command emits structured JSON describing binary/config status without
+mutating the system.

@@ -90,7 +90,12 @@ if (!function_exists('pmssApplyDpkgSelections')) {
 
         $cmd = sprintf('dpkg --set-selections < %s', escapeshellarg($selections));
         runStep('Applying dpkg selection baseline', $cmd);
-        runStep('Installing packages from selection baseline', 'apt-get dselect-upgrade -y');
+        $installCmd = 'apt-get dselect-upgrade -y';
+        $rc = runStep('Installing packages from selection baseline', $installCmd);
+        if ($rc !== 0) {
+            runStep('Attempting apt fix-broken install (dpkg baseline)', 'apt-get --fix-broken install -y');
+            runStep('Retrying package selection install', $installCmd);
+        }
     }
 }
 

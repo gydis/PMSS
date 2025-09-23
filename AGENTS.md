@@ -7,6 +7,7 @@
 - **Purpose**: PMSS is Pulsed Media's distro overlay for seedboxing, data hoarding, streaming etc. working on top of Debian distro and this repo is overlayed on top of the distro to manage the multi-tenant environment.
 - **Supported OS**: Production targets Debian 10 (buster) and Debian 11 (bullseye); Debian 12 (bookworm) is currently under validation.
 - **Current Freeze**: Do not modify `etc/skel/www` or its subdirectories until further notice; work in that area is paused.
+- **Skel WWW Lockdown**: Never touch `etc/skel/www` (or its contents) unless the user explicitly instructs you to. Treat it as read-only even during refactors or test scaffolding.
 - **Third-Party Libraries**: Treat bundled upstream or vendor code (e.g., ruTorrent front-end, Devristo helpers) as read-only unless explicit approval to update or replace is granted.
 - **Updater Topology**: `update-step2.php` executes after the full repository tree is present, so it may depend on shared libraries under `scripts/lib/update`. In contrast `update.php` must remain a mostly self-contained bootstrapper—assume it might be the only file available during break-glass installs, so keep it focused on argument parsing, fetching the requested snapshot, and handing off to `update-step2.php`.
 - **Distro Selection**: `pmssDetectDistro()` (in `scripts/lib/update/distro.php`) reads `/etc/os-release`, trusts `VERSION_CODENAME` when available, maps that to the corresponding Debian major version, and only falls back to `VERSION_ID` or `lsb_release` when the codename is missing. Any mismatches log a warning and favour the codename so the correct repo template is chosen.
@@ -16,6 +17,7 @@
 - Repo control: templates live under `etc/seedbox/config/template.sources.*`; detection trusts `VERSION_CODENAME` and overrides via `PMSS_OS_RELEASE_PATH` (tests) + `PMSS_APT_SOURCES_PATH` (temp files).
 - Profiling: `runStep()` + `pmssRecordProfile()` emit JSON/summary; opt-in files via `PMSS_JSON_LOG` and `PMSS_PROFILE_OUTPUT`.
 - Always sandbox destructive shelling—use `runStep()` wrappers so timing, stdout/stderr, and JSON logs stay consistent.
+- Tests split: `scripts/lib/tests/development` (unit-style) vs. `scripts/lib/tests/production` (post-provision probes).
 
 ## Core Principles
 - **KISS Principle**: Keep implementations simple, readable, and direct. Avoid unnecessary abstractions or over-engineering.
@@ -47,9 +49,11 @@
 
 ## Operational Verification
 - **Baseline Checks**: Until a formal test suite exists, run lightweight confirmations before committing—`bash -n`, `shellcheck`, and `php -l` as applicable—to ensure syntax correctness.
+- **Dev Tests**: Execute `php scripts/lib/tests/development/Runner.php` after code changes; this suite must pass before PRs or deployments.
 - **Safe Execution Proof**: When possible, exercise non-destructive entry points such as `--help`, `--dry-run`, or environment-detection routines and note the observed output. If the change affects destructive steps, document reasoning or out-of-band validation that supports the update.
 - **Manual Traceability**: Record the commands or scenarios reviewed (including dry runs or log captures) so reviewers can follow the verification story.
 - **Coverage Expectations**: When adding features or models, ship matching unit tests—target at least five distinct cases per function (ideally ten, including unusual or boundary scenarios).
+- **Production Checks (intent)**: Plan to run `/scripts/util/systemTest.php` or the production test suite on live hosts after delivery to capture service/package health.
 - **Testing Philosophy**: Every change should include dev-time tests (self-contained, no network/system modifications) plus an intent to cover production validation (post-deploy probes that confirm services/packages exist). Start by keeping dev tests hermetic; add production probes once the harness exists.
 
 ## Dependency Policy

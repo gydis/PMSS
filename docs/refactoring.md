@@ -19,8 +19,8 @@ following points in mind whenever you touch large files:
   the split exists and what each helper does. Favour short docblocks at the top
   of each file.
 - **Re-run lint/tests.** After refactoring, execute `php -l` on the touched
-  files and run `php scripts/lib/tests/Runner.php` so regressions surface before
-  shipping.
+  files and run `php scripts/lib/tests/development/Runner.php` so regressions
+  surface before shipping.
 
 These rules complement the “Linux kernel style” note already present in the
 repository documentation and should be referenced before undertaking larger

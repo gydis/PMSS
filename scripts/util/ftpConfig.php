@@ -13,6 +13,12 @@ if ($configTemplate === false || $hostnameRaw === false) {
     die('No data, hostname or config template is empty!');
 }
 
+$proftpdDir = '/etc/proftpd';
+if (!is_dir($proftpdDir)) {
+    fwrite(STDERR, "Skipping ProFTPD configuration (directory {$proftpdDir} missing).\n");
+    return;
+}
+
 $hostname = sanitizeHostname($hostnameRaw);
 $tlsBlock = buildTlsConfiguration($hostname);
 

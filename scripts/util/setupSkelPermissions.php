@@ -9,10 +9,16 @@ passthru("cd /etc/seedbox; chmod o-w * -R; chmod o-w .* -R"); // not using 775 b
 passthru("chmod o+x /etc/seedbox");
 
 // Setup openvpn config perms
-
-passthru('chmod 771 /etc/openvpn');
-`chmod 640 /etc/openvpn/openvpn.conf`;
-`chmod 771 /etc/openvpn/easy-rsa`;
-`chmod 664 /etc/seedbox/config/localnet`;
-@`chmod 664 /etc/seedbox/localnet`;
-
+if (is_dir('/etc/openvpn')) {
+    @chmod('/etc/openvpn', 0771);
+}
+if (is_file('/etc/openvpn/openvpn.conf')) {
+    @chmod('/etc/openvpn/openvpn.conf', 0640);
+}
+if (is_dir('/etc/openvpn/easy-rsa')) {
+    @chmod('/etc/openvpn/easy-rsa', 0771);
+}
+if (is_file('/etc/seedbox/config/localnet')) {
+    @chmod('/etc/seedbox/config/localnet', 0664);
+}
+@chmod('/etc/seedbox/localnet', 0664);

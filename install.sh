@@ -22,17 +22,17 @@ branch=
 
 # Simple colour-aware logging helpers.
 if [ -t 1 ]; then
-    COLOR_BLUE="$(tput setaf 4)"
-    COLOR_GREEN="$(tput setaf 2)"
-    COLOR_YELLOW="$(tput setaf 3)"
-    COLOR_RED="$(tput setaf 1)"
-    COLOR_RESET="$(tput sgr0)"
+	COLOR_BLUE="$(tput setaf 4)"
+	COLOR_GREEN="$(tput setaf 2)"
+	COLOR_YELLOW="$(tput setaf 3)"
+	COLOR_RED="$(tput setaf 1)"
+	COLOR_RESET="$(tput sgr0)"
 else
-    COLOR_BLUE=""
-    COLOR_GREEN=""
-    COLOR_YELLOW=""
-    COLOR_RED=""
-    COLOR_RESET=""
+	COLOR_BLUE=""
+	COLOR_GREEN=""
+	COLOR_YELLOW=""
+	COLOR_RED=""
+	COLOR_RESET=""
 fi
 
 log_step() { echo -e "${COLOR_BLUE}==>${COLOR_RESET} $*"; }
@@ -107,15 +107,15 @@ done
 set -- "${POSITIONAL[@]}"
 
 if [ $# -gt 0 ]; then
-    SOURCE_SPEC="$1"
-    shift
+	SOURCE_SPEC="$1"
+	shift
 else
-    SOURCE_SPEC=""
+	SOURCE_SPEC=""
 fi
 if [ -n "$SOURCE_SPEC" ]; then
-    UPDATE_ARGS=("$SOURCE_SPEC" "$@")
+	UPDATE_ARGS=("$SOURCE_SPEC" "$@")
 else
-    UPDATE_ARGS=("$@")
+	UPDATE_ARGS=("$@")
 fi
 
 parse_version_string() {
@@ -149,6 +149,19 @@ parse_version_string() {
 	fi
 }
 
+# Idempotently append a snippet to a file if it's not already present.
+append_unique_block() {
+	local file="$1"
+	local marker="$2"
+	local content="$3"
+
+	if grep -Fqx "$marker" "$file" 2>/dev/null; then
+		return
+	fi
+
+	printf '%s\n' "$content" >>"$file"
+}
+
 # Install packages only if missing to avoid accidental removals
 # Wrapper predates the new package pipeline; keep it lean.
 ensure_packages() {
@@ -162,7 +175,7 @@ ensure_packages() {
 		if apt-cache show "$pkg" >/dev/null 2>&1; then
 			missing+=("$pkg")
 		else
-	log_warn "Package $pkg not found in repositories, skipping"
+			log_warn "Package $pkg not found in repositories, skipping"
 		fi
 	done
 
@@ -170,7 +183,7 @@ ensure_packages() {
 		return
 	fi
 
-log_step "Installing missing packages: ${missing[*]}"
+	log_step "Installing missing packages: ${missing[*]}"
 	local chunk=()
 	local len=0
 	local max_len=30000
@@ -192,9 +205,40 @@ log_step "Installing missing packages: ${missing[*]}"
 export DEBIAN_FRONTEND=noninteractive
 log_step "Updating package lists"
 apt update
-# Perform the full-upgrade
 log_step "Running apt full-upgrade"
 apt-get full-upgrade -yqq
+
+# Ensure baseline sysctl, bashrc, and permissions only once.
+install_sysctl_defaults() {
+	local target="/etc/sysctl.d/1-pmss-defaults.conf"
+	cat <<'CONF' >"$target"
+# Pulsed Media Config
+block/sda/queue/scheduler = bfq
+block/sdb/queue/scheduler = bfq
+block/sdc/queue/scheduler = bfq
+block/sdd/queue/scheduler = bfq
+block/sde/queue/scheduler = bfq
+block/sdf/queue/scheduler = bfq
+
+block/sda/queue/read_ahead_kb = 1024
+block/sdb/queue/read_ahead_kb = 1024
+block/sdc/queue/read_ahead_kb = 1024
+block/sdd/queue/read_ahead_kb = 1024
+block/sde/queue/read_ahead_kb = 1024
+block/sdf/queue/read_ahead_kb = 1024
+
+net.ipv4.ip_forward = 1
+CONF
+}
+
+install_root_shell_defaults() {
+	local bashrc="/root/.bashrc"
+	local alias_line="alias ls='ls --color=auto'"
+	local path_line="PATH=\$PATH:/scripts"
+
+	grep -Fqx "${alias_line}" "$bashrc" 2>/dev/null || echo "${alias_line}" >>"$bashrc"
+	grep -Fqx "${path_line}" "$bashrc" 2>/dev/null || echo "${path_line}" >>"$bashrc"
+}
 
 # First Let's verify hostname
 ensure_packages nano vim quota
@@ -226,12 +270,10 @@ fi
 # Setup fstab for quota and /home array
 log_step "Rechecking kernel quota support (legacy helper)"
 log_warn "Remember to add usrjquota/grpjquota options to the quota mount (manual step)"
-echo "
-proc            /proc           proc    defaults,hidepid=2        0       0
-
-# You need to add to the wanted device(s):
-#usrjquota=aquota.user,grpjquota=aquota.group,jqfmt=vfsv1
-" >>/etc/fstab
+append_unique_block \
+	/etc/fstab \
+	"#usrjquota=aquota.user,grpjquota=aquota.group,jqfmt=vfsv1" \
+	$'\nproc            /proc           proc    defaults,hidepid=2        0       0\n\n# You need to add to the wanted device(s):\n#usrjquota=aquota.user,grpjquota=aquota.group,jqfmt=vfsv1\n'
 
 quota_options="usrjquota=aquota.user,grpjquota=aquota.group,jqfmt=vfsv1"
 
@@ -313,12 +355,6 @@ fi
 
 mount -o remount /home
 
-## #TODO: Update to dselections / dpkg set sel, automate
-# TODO this whole follow up section is yucky
-# Package selections, and remove some defaults etc.
-
-#apt-get remove samba-common exim4-base exim4 netcat netcat-traditonal netcat6 -yq
-
 # Minimal prerequisites; remaining packages arrive via update-step2/pmssApplyDpkgSelections.
 ensure_packages git rsync curl wget ca-certificates unzip php php-cli php-xml zip unzip vim tzdata
 
@@ -352,41 +388,19 @@ fi
 mkdir -p /etc/seedbox/config/
 echo "$SOURCE $VERSION" >/etc/seedbox/config/version
 
-#TODO Transfer over the proper rc.local + sysctl configs
 log_step "Deploying legacy BFQ/sysctl tuning (ensure rc.local unchanged)"
-echo "
-#Pulsed Media Config
-block/sda/queue/scheduler = bfq
-block/sdb/queue/scheduler = bfq
-block/sdc/queue/scheduler = bfq
-block/sdd/queue/scheduler = bfq
-block/sde/queue/scheduler = bfq
-block/sdf/queue/scheduler = bfq
+install_sysctl_defaults
 
-block/sda/queue/read_ahead_kb = 1024
-block/sdb/queue/read_ahead_kb = 1024
-block/sdc/queue/read_ahead_kb = 1024
-block/sdd/queue/read_ahead_kb = 1024
-block/sde/queue/read_ahead_kb = 1024
-block/sdf/queue/read_ahead_kb = 1024
-
-net.ipv4.ip_forward = 1
-" >>/etc/sysctl.d/1-pmss-defaults.conf
-
-#TODO Transfer over the proper root .bashrc
 log_step "Configuring root shell defaults"
-echo "alias ls='ls --color=auto'" >>/root/.bashrc
-echo "PATH=\$PATH:/scripts" >>/root/.bashrc
+install_root_shell_defaults
 
 log_step "Adjusting /home permissions"
 chmod o-rw /home
 
-log_step "Finalising daemon configuration"
+log_step "Handing off to /scripts/update.php"
 /scripts/update.php "${UPDATE_ARGS[@]}"
+
 /scripts/util/setupRootCron.php
 /scripts/util/setupSkelPermissions.php
 /scripts/util/quotaFix.php
 /scripts/util/ftpConfig.php
-
-#TODO Ancient API, but it may yet prove to be useful so not quite yet removed -AU
-#/scripts/util/setupApiKey.php

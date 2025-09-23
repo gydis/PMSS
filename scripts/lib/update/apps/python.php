@@ -9,8 +9,19 @@ $flexget = shell_exec('flexget -V');
 $python = trim(shell_exec('command -v python3 2>/dev/null')) ?: 'python3';
 $pipCmd = $python.' -m pip';
 
-// Some images ship without ensurepip; ignore failures and continue with whatever pip is available.
+// Some images ship without ensurepip; run it best-effort and fall back to apt when missing.
 passthru($python.' -m ensurepip --default-pip 2>/dev/null');
+
+$pipVersion = shell_exec($pipCmd.' --version 2>/dev/null');
+if ($pipVersion === null || trim($pipVersion) === '') {
+    passthru('apt-get install -y python3-pip python3-venv python3-setuptools');
+}
+$pipVersion = shell_exec($pipCmd.' --version 2>/dev/null');
+if ($pipVersion === null || trim($pipVersion) === '') {
+    echo "WARNING: python3 pip is still unavailable; skipping Flexget/gdrivefs installs.\n";
+    return;
+}
+
 passthru($pipCmd.' install --upgrade pip setuptools wheel');
 
 // Install gdrivefs -- is this even used anymore?
