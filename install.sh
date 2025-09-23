@@ -1,7 +1,7 @@
 #!/bin/bash
 # PMSS bootstrap installer.
 #
-# - Installs minimal prerequisites on a fresh Debian host.
+# - Installs minimal prerequisites on a fresh Debian host (PHP CLI, unzip, vim, git, curl, wget, ca-certificates, rsync).
 # - Downloads or clones the requested PMSS snapshot and hands off to
 #   update.php with any additional arguments provided.
 # - Performs initial hostname/quota prompts to keep the legacy workflow intact.
@@ -320,7 +320,7 @@ mount -o remount /home
 #apt-get remove samba-common exim4-base exim4 netcat netcat-traditonal netcat6 -yq
 
 # Minimal prerequisites; remaining packages arrive via update-step2/pmssApplyDpkgSelections.
-ensure_packages git rsync curl wget ca-certificates unzip
+ensure_packages git rsync curl wget ca-certificates unzip php php-cli php-xml zip unzip vim tzdata
 
 # Script installs from release by default and uses a specific git branch as the source if given string of "git/branch" format
 log_step "Setting up base software"
