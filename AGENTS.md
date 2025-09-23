@@ -1,19 +1,31 @@
 # Repository Guidelines
 
 ## Project Context
+## Architecture Cheat Sheet
+- Read `docs/architecture.md` before altering bootstrap or update flows; it summarises component responsibilities.
+
 - **Purpose**: PMSS is Pulsed Media's distro overlay for seedboxing, data hoarding, streaming etc. working on top of Debian distro and this repo is overlayed on top of the distro to manage the multi-tenant environment.
 - **Supported OS**: Production targets Debian 10 (buster) and Debian 11 (bullseye); Debian 12 (bookworm) is currently under validation.
 - **Current Freeze**: Do not modify `etc/skel/www` or its subdirectories until further notice; work in that area is paused.
 - **Third-Party Libraries**: Treat bundled upstream or vendor code (e.g., ruTorrent front-end, Devristo helpers) as read-only unless explicit approval to update or replace is granted.
 - **Updater Topology**: `update-step2.php` executes after the full repository tree is present, so it may depend on shared libraries under `scripts/lib/update`. In contrast `update.php` must remain a mostly self-contained bootstrapper—assume it might be the only file available during break-glass installs, so keep it focused on argument parsing, fetching the requested snapshot, and handing off to `update-step2.php`.
+- **Distro Selection**: `pmssDetectDistro()` (in `scripts/lib/update/distro.php`) reads `/etc/os-release`, trusts `VERSION_CODENAME` when available, maps that to the corresponding Debian major version, and only falls back to `VERSION_ID` or `lsb_release` when the codename is missing. Any mismatches log a warning and favour the codename so the correct repo template is chosen.
+
+### Quick Reference (keep handy)
+- Update flow: `install.sh` → `update.php` (bootstrap/JSON logging) → `util/update-step2.php` (orchestration & profiling).
+- Repo control: templates live under `etc/seedbox/config/template.sources.*`; detection trusts `VERSION_CODENAME` and overrides via `PMSS_OS_RELEASE_PATH` (tests) + `PMSS_APT_SOURCES_PATH` (temp files).
+- Profiling: `runStep()` + `pmssRecordProfile()` emit JSON/summary; opt-in files via `PMSS_JSON_LOG` and `PMSS_PROFILE_OUTPUT`.
+- Always sandbox destructive shelling—use `runStep()` wrappers so timing, stdout/stderr, and JSON logs stay consistent.
 
 ## Core Principles
 - **KISS Principle**: Keep implementations simple, readable, and direct. Avoid unnecessary abstractions or over-engineering.
 - **Single-Method Consistency**: When a problem has already been solved in this codebase, reuse the established method instead of introducing alternate approaches. Prefer shared helpers/abstractions over duplicating logic.
-- **MVC Layering Mindset**: Organize logic so that data access, business rules, and presentation/output responsibilities remain clearly separated. Apply this separation consistently from method structure to overall file organization.
+- **MVC Layering Mindset**: Organize logic so that data access, business rules, and presentation/output responsibilities remain clearly separated. Apply this separation consistently—from method structure to overall file organization—to keep behaviour testable and make it easy to add more automated coverage.
 - **Fail-Soft Bias**: Favor recovering and continuing whenever safe instead of terminating execution. Only halt when the outcome would be catastrophic or data-damaging, and document the reason when an exit becomes unavoidable.
+- **Failure Imagination**: Before landing a change, brainstorm how the code might misbehave—even via unlikely, chaotic inputs or operator mistakes—and add guards so those scenarios are prevented or handled harmlessly instead of breaking production.
 - **Readability & Reuse**: Prioritize human readability, comment generously, and reuse existing helpers rather than duplicating logic in new forms.
 - **Predictable Provisioning Flow**: Scripts should follow a deliberate sequence—detect environment, gather inputs, prepare resources, execute actions, and report status—mirroring the clone-and-configure workflow in the reference tooling. Make every transition between steps explicit.
+- **Modular Files**: Keep new scripts and libraries under ~150 lines by splitting responsibilities into focused units; smaller files simplify reviews, make edge-case testing easier, and help us grow coverage.
 - **Change Justification**: Only make modifications when there is a clear, documented reason. Do not alter stable, long-lived behavior without evidence that change is required.
 - **Commenting Rule**: Maintain comments such that, on average, at least one line of commentary appears for every ten lines of code (Linux Kernel style guidance).
 - **Language Policy**: Default to Bash for automation tasks. Step up to PHP when workflows become lengthy or complex, keeping the logic centralized. Do **not** introduce Python; if a requirement appears to demand it, escalate instead of adding a Python dependency.
@@ -37,6 +49,7 @@
 - **Baseline Checks**: Until a formal test suite exists, run lightweight confirmations before committing—`bash -n`, `shellcheck`, and `php -l` as applicable—to ensure syntax correctness.
 - **Safe Execution Proof**: When possible, exercise non-destructive entry points such as `--help`, `--dry-run`, or environment-detection routines and note the observed output. If the change affects destructive steps, document reasoning or out-of-band validation that supports the update.
 - **Manual Traceability**: Record the commands or scenarios reviewed (including dry runs or log captures) so reviewers can follow the verification story.
+- **Coverage Expectations**: When adding features or models, ship matching unit tests—target at least five distinct cases per function (ideally ten, including unusual or boundary scenarios).
 
 ## Dependency Policy
 - **Default Stance**: Avoid adding new system packages, Composer dependencies, or external binaries unless there is a clear, reviewable justification.

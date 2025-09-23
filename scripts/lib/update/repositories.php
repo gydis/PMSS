@@ -13,7 +13,7 @@ if (!function_exists('pmssRefreshRepositories')) {
     function pmssRefreshRepositories(string $distroName, int $distroVersion, ?callable $logger = null): void
     {
         $log = pmssSelectLogger($logger);
-        $sourcesPath = '/etc/apt/sources.list';
+        $sourcesPath = pmssAptSourcesPath();
         $currentData = @file_get_contents($sourcesPath);
         $currentHash = $currentData !== false ? sha1($currentData) : '';
 

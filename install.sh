@@ -150,6 +150,7 @@ parse_version_string() {
 }
 
 # Install packages only if missing to avoid accidental removals
+# Wrapper predates the new package pipeline; keep it lean.
 ensure_packages() {
 	local pkg
 	local missing=()
@@ -235,6 +236,7 @@ proc            /proc           proc    defaults,hidepid=2        0       0
 quota_options="usrjquota=aquota.user,grpjquota=aquota.group,jqfmt=vfsv1"
 
 # Attach quota options to a specific mount while keeping /etc/fstab intact.
+# Legacy helper to append quota options; kept for compatibility.
 ensure_quota_options() {
 	local mount_point="$1"
 	local opts="$2"
@@ -317,34 +319,8 @@ mount -o remount /home
 
 #apt-get remove samba-common exim4-base exim4 netcat netcat-traditonal netcat6 -yq
 
-ensure_packages libncurses5-dev less
-ensure_packages libxmlrpc-c++4-dev libxmlrpc-c++4 #Not found on deb8
-ensure_packages libxmlrpc-c++8v5
-ensure_packages automake autogen build-essential libwww-curl-perl libcurl4-openssl-dev libsigc++-2.0-dev libwww-perl sysfsutils libcppunit-dev
-ensure_packages gcc g++ gettext glib-networking libglib2.0-dev libfuse-dev apt-transport-https
-
-ensure_packages php php-cli php-geoip php-gd php-apcu php-cgi php-sqlite3 php-common php-xmlrpc php-curl
-
-ensure_packages psmisc rsync subversion mktorrent
-#apt-get -t testing install mktorrent rsync -y
-
-ensure_packages libncurses5 libncurses5-dev links elinks lynx sudo
-ensure_packages pkg-config make openssl
-
-#From update-step2 l:72, remove them from there circa 03/2016
-ensure_packages znc znc-perl znc-python znc-tcl
-ensure_packages gcc g++ gettext python-cheetah curl fuse glib-networking libglib2.0-dev libfuse-dev apt-transport-https #Everythin installed already on deb8
-ensure_packages links elinks lynx ethtool p7zip-full smartmontools                                                      #all but smart + p7zip already installed...
-ensure_packages flac lame lame-doc mp3diags lftp
-#Following are for autodl-irssi
-ensure_packages libarchive-zip-perl libnet-ssleay-perl libhtml-parser-perl libxml-libxml-perl libjson-perl libjson-xs-perl libxml-libxslt-perl
-
-ensure_packages libssl-dev libssl1.1 mediainfo libmediainfo0v5 ##TODO Yuck distro version dependant
-
-ensure_packages git
-ensure_packages php-xml php8.2-cgi php8.2-cli php8.2-readline php8.2-opcache php8.2-common
-ensure_packages iptables curl libssl-dev python3-pip cgroup-tools libtool
-touch /usr/share/pyload ## XXX: This is a hack to disable pyload-cli install
+# Minimal prerequisites; remaining packages arrive via update-step2/pmssApplyDpkgSelections.
+ensure_packages git rsync curl wget ca-certificates unzip
 
 # Script installs from release by default and uses a specific git branch as the source if given string of "git/branch" format
 log_step "Setting up base software"

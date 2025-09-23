@@ -11,6 +11,21 @@ require_once __DIR__.'/runtime.php';
 require_once __DIR__.'/update/logging.php';
 require_once __DIR__.'/update/apt.php';
 
+// Cache container for os-release parsing so tests can reset it safely.
+$GLOBALS['PMSS_OS_RELEASE_CACHE'] = $GLOBALS['PMSS_OS_RELEASE_CACHE'] ?? [];
+
+/**
+ * Determine which os-release file to consult (allows tests to override).
+ */
+function pmssOsReleasePath(): string
+{
+    $override = getenv('PMSS_OS_RELEASE_PATH');
+    if (is_string($override) && $override !== '') {
+        return $override;
+    }
+    return '/etc/os-release';
+}
+
 /**
  * Locate the base directory for skeleton files.
  */
@@ -159,11 +174,12 @@ function updateRutorrentConfig($username, $scgiPort) {
  * @return array Parsed key-value pairs from /etc/os-release.
  */
 function getOsReleaseData() {
-    static $data = null;
-    if ($data === null) {
-        $data = parse_ini_file('/etc/os-release');
+    $path = pmssOsReleasePath();
+    if (!isset($GLOBALS['PMSS_OS_RELEASE_CACHE'][$path])) {
+        $parsed = @parse_ini_file($path);
+        $GLOBALS['PMSS_OS_RELEASE_CACHE'][$path] = is_array($parsed) ? $parsed : [];
     }
-    return $data;
+    return $GLOBALS['PMSS_OS_RELEASE_CACHE'][$path];
 }
 
 /**
@@ -190,6 +206,29 @@ function getDistroVersion() {
             return $matches[1];
         }
         return $data['VERSION_ID'];
+    }
+    return '';
+}
+
+/**
+ * Reset cached os-release data so tests can inject fresh fixtures.
+ */
+function pmssResetOsReleaseCache(): void
+{
+    $path = pmssOsReleasePath();
+    unset($GLOBALS['PMSS_OS_RELEASE_CACHE'][$path]);
+}
+
+/**
+ * Get the distribution codename from /etc/os-release when available.
+ *
+ * @return string Lowercase codename (e.g., "bullseye") or an empty string.
+ */
+function getDistroCodename(): string
+{
+    $data = getOsReleaseData();
+    if (!empty($data['VERSION_CODENAME'])) {
+        return strtolower(trim($data['VERSION_CODENAME']));
     }
     return '';
 }

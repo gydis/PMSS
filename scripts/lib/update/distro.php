@@ -31,13 +31,51 @@ if (!function_exists('pmssDetectDistro')) {
         }
 
         $version  = (int) filter_var($rawVersion, FILTER_SANITIZE_NUMBER_INT) ?: 0;
-        $codename = trim((string) @shell_exec('lsb_release -cs 2>/dev/null'));
+        $codename = getDistroCodename();
+        if ($codename === '') {
+            $codename = strtolower(trim((string) @shell_exec('lsb_release -cs 2>/dev/null')));
+        }
+
+        $mappedVersion = pmssVersionFromCodename($codename);
+        if ($mappedVersion !== 0 && $mappedVersion !== $version) {
+            if (function_exists('logmsg')) {
+                logmsg(sprintf('Distro codename/version mismatch (%s vs %d); trusting codename', $codename, $version));
+            }
+            $version = $mappedVersion;
+        } elseif ($version === 0) {
+            $version = $mappedVersion;
+        }
 
         return [
             'name'     => $name,
             'version'  => $version,
             'codename' => $codename,
         ];
+    }
+}
+
+if (!function_exists('pmssVersionFromCodename')) {
+    /**
+     * Map Debian release codenames to their major version numbers.
+     */
+    function pmssVersionFromCodename(string $codename): int
+    {
+        switch (strtolower($codename)) {
+            case 'jessie':
+                return 8;
+            case 'stretch':
+                return 9;
+            case 'buster':
+                return 10;
+            case 'bullseye':
+                return 11;
+            case 'bookworm':
+                return 12;
+            case 'trixie':
+                return 13;
+            default:
+                return 0;
+        }
     }
 }
 

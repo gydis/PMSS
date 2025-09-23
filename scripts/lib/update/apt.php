@@ -6,6 +6,18 @@
 require_once __DIR__.'/logging.php';
 
 /**
+ * Return the target path for the primary apt sources file (testable override).
+ */
+function pmssAptSourcesPath(): string
+{
+    $override = getenv('PMSS_APT_SOURCES_PATH');
+    if (is_string($override) && $override !== '') {
+        return $override;
+    }
+    return '/etc/apt/sources.list';
+}
+
+/**
  * Load an APT sources template from the config directory.
  */
 function pmssLoadRepoTemplate(string $codename, ?callable $logger = null): string
@@ -33,7 +45,7 @@ function pmssLoadRepoTemplate(string $codename, ?callable $logger = null): strin
 function pmssSafeWriteSources(string $content, string $label, ?callable $logger = null): bool
 {
     $log = pmssSelectLogger($logger);
-    $target = '/etc/apt/sources.list';
+    $target = pmssAptSourcesPath();
     $backup = $target.'.pmss-backup';
 
     if ($content === '') {
@@ -42,6 +54,10 @@ function pmssSafeWriteSources(string $content, string $label, ?callable $logger 
     }
 
     $current = @file_get_contents($target);
+    $dir = dirname($target);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
     if ($current !== false && @file_put_contents($backup, $current, LOCK_EX) === false) {
         $log("[WARN] Unable to create backup $backup before updating $label");
     } elseif ($current !== false) {
