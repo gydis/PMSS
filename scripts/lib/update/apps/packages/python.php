@@ -50,7 +50,7 @@ function pmssInstallZncStack(int $distroVersion): void
 
     pmssQueuePostInstallCommand(
         'Installing acd_cli helper',
-        'python3 -m pip install --upgrade git+https://github.com/yadayada/acd_cli.git'
+        'python3 -m pip install --upgrade git+https://github.com/yadayada/acd_cli.git' // #TODO move to dedicated venv
     );
 
     if (!file_exists('/usr/bin/ffmpeg')) {

@@ -41,6 +41,8 @@ function pmssQueuePackages(array $packages, ?string $target = null): void
     }
 }
 
+// #TODO retire queue once dpkg baselines are authoritative for every package on every host.
+
 function pmssQueuePackage(string $package, ?string $target = null): void
 {
     pmssQueuePackages([$package], $target);

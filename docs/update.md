@@ -67,7 +67,8 @@ Execution outline:
 1. Detect distro name/version/codename and ensure `update.php` is up to date.
 2. Enforce non-interactive apt settings and finish any pending dpkg configs.
 3. Immediately refresh APT repositories and install every queued package _before_ any
-   other orchestration (this ordering is mandatory for all future regressions).
+   other orchestration (this ordering is mandatory for all future regressions). #TODO Once
+   the dpkg baselines include the full package set we can drop the per-app queue entirely.
 4. Prepare the host (cgroups, systemd slices, base permissions, MOTD, locales) and
    reapply legacy installer defaults (sysctl tuning, root shell config, `/home`
    permissions, hostname/quota overrides exported by `install.sh`).

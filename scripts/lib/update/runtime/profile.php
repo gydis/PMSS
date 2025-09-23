@@ -1,6 +1,11 @@
 <?php
 /**
- * Profile collection helpers used during update-step orchestration.
+ * Profiling helpers for `update-step2.php` orchestration.
+ *
+ * Collects per-step timing/return-code metadata emitted by `runStep()` so the
+ * orchestrator can stream JSON events, log human-readable summaries, and stash
+ * full traces to disk for later debugging when updates behave oddly or run
+ * slower than expected.
  */
 
 require_once __DIR__.'/../logging.php';

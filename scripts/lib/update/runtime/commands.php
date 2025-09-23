@@ -10,6 +10,9 @@ require_once __DIR__.'/../../runtime.php';
 if (!function_exists('runStep')) {
     /**
      * Execute a shell command, keeping failures soft.
+     *
+     * Logged `rc=<n>` values surface the raw shell return code so operators can
+     * read `rc=0` as success and treat any non-zero value as a soft failure.
      */
     function runStep(string $description, string $command): int
     {
@@ -19,6 +22,7 @@ if (!function_exists('runStep')) {
         $rc      = $dryRun ? 0 : runCommand($command, false);
 
         $duration    = microtime(true) - $started;
+        // rc reflects the shell return code so downstream logs can inspect rc=0 for success
         $status      = $dryRun ? 'SKIP' : ($rc === 0 ? 'OK' : 'ERR');
         $lastOutput  = $GLOBALS['PMSS_LAST_COMMAND_OUTPUT'] ?? ['stdout' => '', 'stderr' => ''];
         $stdout      = $dryRun ? '' : ($lastOutput['stdout'] ?? '');

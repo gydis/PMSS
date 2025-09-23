@@ -81,7 +81,7 @@ function radarrPersistVersion(string $version): void
 {
     $dir = dirname(RADARR_VERSION_RECORD);
     if (!is_dir($dir)) {
-        @mkdir($dir, 0750, true);
+        @mkdir($dir, 0750, true); // #TODO share with Sonarr persists; identical code exists there
     }
     @file_put_contents(RADARR_VERSION_RECORD, $version.PHP_EOL);
 }

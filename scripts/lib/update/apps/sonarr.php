@@ -114,7 +114,7 @@ function pmssSonarrPersistVersion(string $version): void
 {
     $dir = dirname(SONARR_VERSION_RECORD);
     if (!is_dir($dir)) {
-        @mkdir($dir, 0750, true);
+        @mkdir($dir, 0750, true); // #TODO share with Radarr persist helper to avoid duplication
     }
     @file_put_contents(SONARR_VERSION_RECORD, $version.PHP_EOL);
 }

@@ -1,5 +1,10 @@
 #!/usr/bin/php
 <?php
+/**
+ * Normalise skeleton and configuration permissions so hosts converge on the
+ * secure baseline expected by provisioning. Intended for idempotent reruns
+ * during updates and manual recovery.
+ */
 #TODO Wrong naming etc.
 
 passthru("cd /etc/skel; chmod o-w * -R; chmod o-w .* -R"); // not using 775 because there might be places where the perms differ and need to differ

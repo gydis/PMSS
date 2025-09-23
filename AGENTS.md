@@ -23,7 +23,14 @@
 
 ## Core Principles
 - **KISS Principle**: Keep implementations simple, readable, and direct. Avoid unnecessary abstractions or over-engineering.
+- **DRY Principle**: Don’t repeat yourself. Consolidate shared logic instead of copying blocks between modules.
 - **Single-Method Consistency**: When a problem has already been solved in this codebase, reuse the established method instead of introducing alternate approaches. Prefer shared helpers/abstractions over duplicating logic.
+- **Separation of Concerns**: Keep modules focused; each file should own one area of responsibility (distro detection, package management, user updates, etc.).
+- **Single Responsibility**: Functions/classes/modules should have exactly one reason to change. Split multi-purpose code into smaller units rather than piling on conditionals.
+- **Clear Abstractions & Contracts**: Expose intent through small, stable interfaces and hide implementation details behind them.
+- **Low Coupling, High Cohesion**: Keep related logic together while minimizing cross-module knowledge and dependencies.
+- **Explicit Boundaries**: Isolate core logic from I/O, UI, frameworks, storage, and transports—layer the code so each concern stays independent.
+- **Never Break Old Users**: Any change must preserve existing users’ workflows and data; upgrades should be safe, reversible, and backward compatible.
 - **MVC Layering Mindset**: Organize logic so that data access, business rules, and presentation/output responsibilities remain clearly separated. Apply this separation consistently—from method structure to overall file organization—to keep behaviour testable and make it easy to add more automated coverage.
 - **Fail-Soft Bias**: Favor recovering and continuing whenever safe instead of terminating execution. Only halt when the outcome would be catastrophic or data-damaging, and document the reason when an exit becomes unavoidable.
 - **Failure Imagination**: Before landing a change, brainstorm how the code might misbehave—even via unlikely, chaotic inputs or operator mistakes—and add guards so those scenarios are prevented or handled harmlessly instead of breaking production.
@@ -48,6 +55,9 @@
 ## Package Baseline
 - **dpkg Selections**: The file `scripts/lib/update/dpkg/selections.txt` is a direct capture from a production system. Do **not** edit it without explicit approval—the list must remain in sync with live hosts.
 - **Release Baselines**: Per-release snapshots (`scripts/lib/update/dpkg/selections-debian10.txt`, `scripts/lib/update/dpkg/selections-debian11.txt`, `scripts/lib/update/dpkg/selections-debian12.txt`) mirror production environments. Treat these files as immutable: never hand-edit, trim, or reorder entries. When a refresh is required, capture a new baseline with `dpkg --get-selections`, scrub `deinstall` rows, and land the update only with platform sign-off.
+- Refer to `docs/dpkg-baseline.md` for the exact capture process when adding support for a new distro (Debian 13, Ubuntu, etc.).
+- Architecture docs and these guardrails are mandatory reading—don’t start coding until you understand both.
+- #TODO Consolidate package management around the dpkg baselines (no per-app queues) so every host installs the exact same package set and the update flow stays idempotent.
 
 ## Operational Verification
 - **Baseline Checks**: Until a formal test suite exists, run lightweight confirmations before committing—`bash -n`, `shellcheck`, and `php -l` as applicable—to ensure syntax correctness.

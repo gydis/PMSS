@@ -106,6 +106,7 @@ pmssConfigureAptNonInteractive('logmsg');
 //   3. Autoremove strays that block upgrades
 //   4. Apply the dpkg baseline and queued package installs
 // Resist the urge to move or delete any of these steps.
+// #TODO Collapse per-app package queues once dpkg baselines carry the complete manifest.
 // -------------------------------------------------------------------------------------------
 
 runStep('Attempting apt fix-broken install (pre-package phase)', aptCmd('--fix-broken install -y'));
