@@ -97,6 +97,7 @@ if (!function_exists('pmssApplyDpkgSelections')) {
         $tmpSelection  = null;
         $lines         = @file($selections, FILE_IGNORE_NEW_LINES);
         $success       = true;
+        $warnings      = false;
         if ($lines !== false) {
             $sanitised = [];
             foreach ($lines as $idx => $line) {
@@ -109,7 +110,7 @@ if (!function_exists('pmssApplyDpkgSelections')) {
                     if (function_exists('logmsg')) {
                         logmsg(sprintf('[WARN] Ignoring malformed dpkg selection line %d: %s', $idx + 1, $trimmed));
                     }
-                    $success = false;
+                    $warnings = true;
                     continue;
                 }
                 $package = $parts[0];
@@ -118,7 +119,7 @@ if (!function_exists('pmssApplyDpkgSelections')) {
                     if (function_exists('logmsg')) {
                         logmsg(sprintf('[WARN] Invalid dpkg selection entry at line %d: %s', $idx + 1, $trimmed));
                     }
-                    $success = false;
+                    $warnings = true;
                     continue;
                 }
                 $sanitised[] = $package."\t".strtolower($state);
@@ -131,7 +132,7 @@ if (!function_exists('pmssApplyDpkgSelections')) {
                 } elseif ($tmpSelection !== false) {
                     @unlink($tmpSelection);
                     $tmpSelection = null;
-                    $success      = false;
+                    $warnings     = true;
                 }
             }
         }
@@ -154,6 +155,10 @@ if (!function_exists('pmssApplyDpkgSelections')) {
 
         if ($tmpSelection !== null) {
             @unlink($tmpSelection);
+        }
+
+        if ($warnings && function_exists('logmsg')) {
+            logmsg('[WARN] Dpkg selection baseline contained ignored entries; proceeding with remaining packages');
         }
 
         return $success;

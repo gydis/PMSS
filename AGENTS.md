@@ -45,7 +45,7 @@
 
 ## Package Baseline
 - **dpkg Selections**: The file `scripts/lib/update/dpkg/selections.txt` is a direct capture from a production system. Do **not** edit it without explicit approval—the list must remain in sync with live hosts.
-- **Release Baselines**: Per-release snapshots (`selections-debian10.txt`, `selections-debian11.txt`, `selections-debian12.txt`) mirror production environments. The Debian 12 list is generated from the bullseye baseline and must be validated before full rollout. Regenerate with `dpkg --get-selections` on a live host and strip any `deinstall` lines before committing.
+- **Release Baselines**: Per-release snapshots (`scripts/lib/update/dpkg/selections-debian10.txt`, `scripts/lib/update/dpkg/selections-debian11.txt`, `scripts/lib/update/dpkg/selections-debian12.txt`) mirror production environments. Treat these files as immutable: never hand-edit, trim, or reorder entries. When a refresh is required, capture a new baseline with `dpkg --get-selections`, scrub `deinstall` rows, and land the update only with platform sign-off.
 
 ## Operational Verification
 - **Baseline Checks**: Until a formal test suite exists, run lightweight confirmations before committing—`bash -n`, `shellcheck`, and `php -l` as applicable—to ensure syntax correctness.

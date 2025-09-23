@@ -52,6 +52,12 @@ if ($repoVersion !== 0 && $reportedVersion !== 0 && $repoVersion !== $reportedVe
     $repoLogMessage = sprintf('Repository version mapped via codename %s -> %d (reported=%s)', $lsbCodename !== '' ? $lsbCodename : 'unknown', $repoVersion, $distroVersion);
 }
 
+if ($reportedVersion > 0 && $reportedVersion < 10) {
+    logmsg(sprintf('Detected unsupported Debian release %s; aborting', $distroVersion));
+    pmssLogJson(['event' => 'update-step2', 'status' => 'error', 'reason' => 'unsupported_debian', 'version' => $distroVersion]);
+    exit(1);
+}
+
 putenv('PMSS_DISTRO_NAME='.$distroName);
 putenv('PMSS_DISTRO_VERSION='.(string) $reportedVersion);
 putenv('PMSS_DISTRO_CODENAME='.$lsbCodename);
@@ -90,7 +96,21 @@ logmsg('update-step2.php starting');
 pmssLogJson(['event' => 'phase', 'name' => 'update-step2', 'status' => 'start']);
 
 pmssConfigureAptNonInteractive('logmsg');
+
+// --- PACKAGE PHASE: DO NOT REORDER ---------------------------------------------------------
+// Everything below depends on distro packages being in a good state. Toolchains, service
+// binaries, and build scripts all assume apt has already delivered their dependencies. If
+// this sequence changes, expect cascading failures across the update flow.
+//   1. Attempt to recover partially configured packages (`apt --fix-broken`)
+//   2. Refresh repositories (apt update) so we pull the latest metadata
+//   3. Autoremove strays that block upgrades
+//   4. Apply the dpkg baseline and queued package installs
+// Resist the urge to move or delete any of these steps.
+// -------------------------------------------------------------------------------------------
+
+runStep('Attempting apt fix-broken install (pre-package phase)', aptCmd('--fix-broken install -y'));
 pmssRefreshRepositories($distroName, $effectiveRepoVersion, 'logmsg');
+pmssAutoremovePackages();
 pmssCompletePendingDpkg();
 $dpkgBaselineOk = pmssApplyDpkgSelections($effectiveRepoVersion > 0 ? $effectiveRepoVersion : null);
 if ($repoLogMessage !== '') {

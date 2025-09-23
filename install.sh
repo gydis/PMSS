@@ -375,7 +375,7 @@ if [ "$type" = "git" ]; then
 	rsync -a --ignore-missing-args PMSS/{var,scripts,etc} /
 	rm -rf PMSS
 	SOURCE="$type/$repository:$branch"
-	VERSION=$(date)
+	VERSION="$SOURCE"
 else
 	VERSION=$(wget https://api.github.com/repos/MagnaCapax/PMSS/releases/latest -O - | awk -F \" -v RS="," '/tag_name/ {print $(NF-1)}')
 	wget "https://api.github.com/repos/MagnaCapax/PMSS/tarball/${VERSION}" -O PMSS.tar.gz
@@ -383,10 +383,11 @@ else
 	rsync -a --ignore-missing-args PMSS/{var,scripts,etc} /
 	rm -rf PMSS
 	SOURCE="release"
+	VERSION="$SOURCE:${VERSION:-unknown}"
 fi
 
 mkdir -p /etc/seedbox/config/
-echo "$SOURCE $VERSION" >/etc/seedbox/config/version
+echo "$VERSION" >/etc/seedbox/config/version
 
 log_step "Deploying legacy BFQ/sysctl tuning (ensure rc.local unchanged)"
 install_sysctl_defaults

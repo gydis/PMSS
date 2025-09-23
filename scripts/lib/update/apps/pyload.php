@@ -1,16 +1,44 @@
 <?php
-# Add pyLoad
+/**
+ * Install or upgrade pyLoad (pyload-ng) using a Python 3 virtual environment.
+ */
+
+require_once __DIR__.'/packages/helpers.php';
+
 $distroVersion = (int) (getenv('PMSS_DISTRO_VERSION') ?: 0);
-if ($distroVersion >= 12) {
-    echo "## Skipping pyLoad cli install on Debian {$distroVersion}\n";
+if ($distroVersion > 0 && $distroVersion < 10) {
+    if (function_exists('logmsg')) {
+        logmsg('[WARN] Skipping pyLoad setup: unsupported Debian release');
+    }
     return;
 }
 
-if (!file_exists('/usr/share/pyload')) {
-    echo "## Installing pyLoad cli\n";
-    //passthru("wget http://pulsedmedia.com/remote/pkg/pyload-cli-v0.4.9-all.deb -O /tmp/pyload-cli-v0.4.9-all.deb");
-    passthru("wget https://github.com/pyload/pyload/releases/download/v0.4.20/pyload-cli_0.4.20_all.deb -O /tmp/pyload.deb");
-    // Package installs should be here .... and it's python so should be in docker container regardless since t his is guaranteed to break
-    //passthru("apt-get install -y python-pycurl python-crypto python-central");
-    passthru("dpkg -i /tmp/pyload.deb");
+$venvDir  = '/opt/pyload';
+$binDir   = $venvDir.'/bin';
+$pyloadBin = $binDir.'/pyload';
+$pythonBin = $binDir.'/python';
+
+$aptDeps = [
+    'python3',
+    'python3-distutils',
+    'python3-venv',
+    'python3-pip',
+    'libffi-dev',
+    'libssl-dev',
+    'libjpeg-dev',
+    'zlib1g-dev',
+];
+
+$aptArgs = implode(' ', array_map('escapeshellarg', $aptDeps));
+runStep('Installing pyLoad dependencies', aptCmd('install -y '.$aptArgs));
+
+if (!is_dir($venvDir)) {
+    runStep('Creating pyLoad virtualenv', sprintf('python3 -m venv %s', escapeshellarg($venvDir)));
+}
+
+runStep('Upgrading virtualenv pip/setuptools', sprintf('%s -m pip install --upgrade pip setuptools wheel', escapeshellarg($pythonBin)));
+runStep('Installing pyLoad (pyload-ng)', sprintf('%s -m pip install --upgrade pyload-ng', escapeshellarg($pythonBin)));
+
+if (!is_link('/usr/local/bin/pyload')) {
+    runStep('Linking pyLoad executable', sprintf('ln -sf %s %s', escapeshellarg($pyloadBin), escapeshellarg('/usr/local/bin/pyload')));
 }
