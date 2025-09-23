@@ -2,7 +2,7 @@
 
 ## Project Context
 ## Architecture Cheat Sheet
-- Read `docs/architecture.md` before altering bootstrap or update flows; it summarises component responsibilities.
+- **Before touching any code**, read `docs/architecture.md` and the related workflow docs in `docs/update.md` / `docs/install.md`. These describe the provisioning hierarchy (install → update.php → update-step2) and must be understood prior to making changes.
 
 - **Purpose**: PMSS is Pulsed Media's distro overlay for seedboxing, data hoarding, streaming etc. working on top of Debian distro and this repo is overlayed on top of the distro to manage the multi-tenant environment.
 - **Supported OS**: Production targets Debian 10 (buster) and Debian 11 (bullseye); Debian 12 (bookworm) is currently under validation.
@@ -16,6 +16,8 @@
 - Update flow: `install.sh` → `update.php` (bootstrap/JSON logging) → `util/update-step2.php` (orchestration & profiling).
 - Repo control: templates live under `etc/seedbox/config/template.sources.*`; detection trusts `VERSION_CODENAME` and overrides via `PMSS_OS_RELEASE_PATH` (tests) + `PMSS_APT_SOURCES_PATH` (temp files).
 - Profiling: `runStep()` + `pmssRecordProfile()` emit JSON/summary; opt-in files via `PMSS_JSON_LOG` and `PMSS_PROFILE_OUTPUT`.
+- `scripts/`: sysadmin tooling intended for daily operations and automation entry points (e.g., `update.php`, service maintenance wrappers). Assume anything here may be invoked by cron/remote orchestration—keep interfaces stable.
+- `scripts/util/`: lower-frequency utilities, programmatic helpers, or one-off provisioning actions; review carefully before adding new dependencies.
 - Always sandbox destructive shelling—use `runStep()` wrappers so timing, stdout/stderr, and JSON logs stay consistent.
 - Tests split: `scripts/lib/tests/development` (unit-style) vs. `scripts/lib/tests/production` (post-provision probes).
 
