@@ -177,6 +177,8 @@ libcap2:amd64				install
 libcap2-bin					install
 libcdio18:amd64				install
 libcom-err2:amd64			install
+libcppunit-1.14-0:amd64		install
+libcppunit-dev			install
 libcrypt-dev:amd64			install
 libcrypt1:amd64				install
 libcurl4:amd64				install
