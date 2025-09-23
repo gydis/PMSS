@@ -1,3 +1,4 @@
+# Generated from Debian 11 baseline; validate on Bookworm before production rollout.
 adduser						install
 adwaita-icon-theme				install
 alsa-topology-conf				install
@@ -218,15 +219,15 @@ libpam0g:amd64				install
 libpci3:amd64				install
 libpcre2-8-0:amd64			install
 libpcre3:amd64				install
-libperl5.32:amd64			install
+libperl5.36:amd64			install
 libpng16-16:amd64			install
 libprocps8:amd64			install
 libpsl5:amd64				install
 libpython3-dev:amd64			install
 libpython3-stdlib:amd64			install
-libpython3.9-dev:amd64			install
-libpython3.9-minimal:amd64		install
-libpython3.9-stdlib:amd64		install
+libpython3.11-dev:amd64			install
+libpython3.11-minimal:amd64		install
+libpython3.11-stdlib:amd64		install
 libreadline8:amd64			install
 librtmp1:amd64			install
 libsasl2-2:amd64			install

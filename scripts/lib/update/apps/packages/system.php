@@ -51,10 +51,7 @@ function pmssInstallMediaAndNetworkTools(int $distroVersion): void
         ['python3-cheetah', 'python-cheetah'],
     ], 'Python Cheetah templates');
 
-    $backports = pmssBackportSuite($distroVersion);
-    if ($backports !== null) {
-        pmssQueuePackages(['curl', 'libcurl4'], $backports);
-    }
+    // #TODO revisit curl/libcurl upgrades once a consistent backports policy is defined.
     pmssQueuePackages(['unionfs-fuse', 'sshfs', 's3fs']);
     pmssQueuePackages(['ranger', 'nethack-console']);
 

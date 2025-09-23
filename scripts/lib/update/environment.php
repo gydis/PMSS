@@ -52,7 +52,14 @@ if (!function_exists('pmssCompletePendingDpkg')) {
                 runCommand('systemctl unmask proftpd.service');
             }
         }
-        runStep('Completing pending dpkg configuration', 'dpkg --configure -a');
+
+        $rc = runStep('Completing pending dpkg configuration', 'dpkg --configure -a');
+        if ($rc !== 0) {
+            if (is_dir('/run/systemd/system')) {
+                runStep('Unmasking proftpd for dpkg retry', 'systemctl unmask proftpd.service || true');
+            }
+            runStep('Retrying proftpd configure', 'dpkg --configure proftpd-core proftpd-mod-crypto proftpd-mod-wrap proftpd-basic || true');
+        }
     }
 }
 
@@ -60,12 +67,27 @@ if (!function_exists('pmssApplyDpkgSelections')) {
     /**
      * Apply the baseline dpkg selection snapshot so required packages stay present.
      */
-    function pmssApplyDpkgSelections(): void
+    function pmssApplyDpkgSelections(?int $distroVersion = null): void
     {
-        $selections = __DIR__.'/dpkg/selections.txt';
-        if (!is_readable($selections)) {
+        $baseDir = __DIR__.'/dpkg';
+        $candidates = [];
+        if ($distroVersion !== null) {
+            $candidates[] = sprintf('%s/selections-debian%d.txt', $baseDir, $distroVersion);
+        }
+        $candidates[] = $baseDir.'/selections-debian11.txt';
+        $candidates[] = $baseDir.'/selections.txt';
+
+        $selections = null;
+        foreach ($candidates as $candidate) {
+            if ($candidate !== null && is_readable($candidate)) {
+                $selections = $candidate;
+                break;
+            }
+        }
+        if ($selections === null) {
             return;
         }
+
         $cmd = sprintf('dpkg --set-selections < %s', escapeshellarg($selections));
         runStep('Applying dpkg selection baseline', $cmd);
         runStep('Installing packages from selection baseline', 'apt-get dselect-upgrade -y');

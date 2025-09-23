@@ -38,3 +38,12 @@ git/main:2025-01-01@2025-01-02 03:04
 ```
 `version.meta` records the resolved branch, commit, and log destinations in a
 human-readable JSON structure for audits.
+
+## 6. Preserve dpkg Baseline
+`scripts/lib/update/dpkg/selections.txt` (and the per-release variants
+`selections-debian10.txt`, `selections-debian11.txt`, `selections-debian12.txt`)
+are captured from production. Do **not** edit them without approval. The
+Bookworm snapshot is derived from the Bullseye list and should be validated in
+testing before production rollout.
+- To refresh a snapshot: run `dpkg --get-selections > selections-debianXX.txt`
+  on a live host, then remove any `deinstall` entries before committing.

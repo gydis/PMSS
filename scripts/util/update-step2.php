@@ -30,6 +30,11 @@ require_once __DIR__.'/../lib/update/networking.php';
 
 requireRoot();
 
+$distribution  = pmssDetectDistro();
+$distroName    = $distribution['name'];
+$distroVersion = $distribution['version'];
+$lsbCodename   = $distribution['codename'];
+
 putenv('DEBIAN_FRONTEND=noninteractive');
 putenv('APT_LISTCHANGES_FRONTEND=none');
 putenv('UCF_FORCE_CONFOLD=1');
@@ -57,12 +62,7 @@ if (!function_exists('logmsg')) {
 
 pmssConfigureAptNonInteractive('logmsg');
 pmssCompletePendingDpkg();
-pmssApplyDpkgSelections();
-
-$distribution  = pmssDetectDistro();
-$distroName    = $distribution['name'];
-$distroVersion = $distribution['version'];
-$lsbCodename   = $distribution['codename'];
+pmssApplyDpkgSelections((int)$distroVersion);
 
 require_once __DIR__.'/../lib/update/users.php';
 
@@ -85,6 +85,7 @@ pmssMigrateLegacyLocalnet();
 pmssApplyRuntimeTemplates();
 
 // Install APT packages and related tooling.
+pmssAutoremovePackages();
 include_once '/scripts/lib/update/apps/packages.php';
 pmssFlushPackageQueue();
 pmssAutoremovePackages();
