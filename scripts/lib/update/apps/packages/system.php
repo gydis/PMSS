@@ -13,7 +13,6 @@ function pmssInstallBaseTools(): void
 function pmssInstallSystemUtilities(int $distroVersion): void
 {
     pmssQueuePackages(['screen', 'mc', 'wget', 'gawk', 'subversion', 'libtool', 'libncurses5', 'sqlite', 'locate', 'ntpdate']);
-    pmssQueuePackages(['libcppunit-1.14-0', 'libcppunit-dev']); // #TODO refine dependency grouping if more build tools surface.
     pmssInstallBestEffort([
         ['python3-pycurl', 'python-pycurl'],
         ['python3-crypto', 'python-crypto'],
