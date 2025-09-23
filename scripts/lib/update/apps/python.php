@@ -1,39 +1,31 @@
 <?php
-// Python related stuff ... Yuck, hope this doesn't break every 2nd minute.
-// Yes it does break randomly. Just as expected. Who comes up with rules like "ensure users are broken!" - thanks very much.
+/**
+ * FlexGet + gdrivefs installer using a dedicated Python 3 virtual environment.
+ */
 
+require_once __DIR__.'/packages/helpers.php';
 
-$flexget = shell_exec('flexget -V');
+$python  = trim(shell_exec('command -v python3 2>/dev/null')) ?: 'python3';
+$venvDir = '/opt/flexget';
+$pythonBin = $venvDir.'/bin/python';
+$pipBin    = $venvDir.'/bin/pip';
 
-// Prefer python3's tooling; avoid legacy easy_install hacks that fight with Debian packaging.
-$python = trim(shell_exec('command -v python3 2>/dev/null')) ?: 'python3';
-$pipCmd = $python.' -m pip';
+runStep('Ensuring Python 3 tooling for FlexGet', aptCmd('install -y python3 python3-distutils python3-venv python3-setuptools'));
 
-// Some images ship without ensurepip; run it best-effort and fall back to apt when missing.
-passthru($python.' -m ensurepip --default-pip 2>/dev/null');
-
-$pipVersion = shell_exec($pipCmd.' --version 2>/dev/null');
-if ($pipVersion === null || trim($pipVersion) === '') {
-    passthru('apt-get install -y python3-pip python3-venv python3-setuptools');
-}
-$pipVersion = shell_exec($pipCmd.' --version 2>/dev/null');
-if ($pipVersion === null || trim($pipVersion) === '') {
-    echo "WARNING: python3 pip is still unavailable; skipping Flexget/gdrivefs installs.\n";
-    return;
+if (!is_dir($venvDir)) {
+    runStep('Creating FlexGet virtualenv', sprintf('%s -m venv %s', escapeshellarg($python), escapeshellarg($venvDir)));
 }
 
-passthru($pipCmd.' install --upgrade pip setuptools wheel');
+runStep('Upgrading FlexGet virtualenv tooling', sprintf('%s -m pip install --upgrade pip setuptools wheel', escapeshellarg($pythonBin)));
 
-// Install gdrivefs -- is this even used anymore?
 echo "### Install gdrivefs\n";
-passthru($pipCmd.' install --upgrade gdrivefs');
+runStep('Installing gdrivefs in FlexGet venv', sprintf('%s install --upgrade gdrivefs', escapeshellarg($pipBin)));
 
-echo "### Install/Update Flexget:\n";
-// Keep dependency pins in place but ensure the requirement syntax stays valid for pip.
-passthru($pipCmd.' install --upgrade pyopenssl ndg-httpsclient cryptography');
-passthru($pipCmd." install --upgrade funcsigs 'chardet==3.0.3' 'certifi==2017.4.17'");
-passthru($pipCmd.' install --upgrade flexget');
+echo "### Install/Update FlexGet:\n";
+runStep('Installing FlexGet dependencies', sprintf("%s install --upgrade pyopenssl ndg-httpsclient cryptography funcsigs 'chardet==3.0.3' 'certifi==2017.4.17'", escapeshellarg($pipBin)));
+runStep('Installing FlexGet', sprintf('%s install --upgrade flexget', escapeshellarg($pipBin)));
+runStep('Installing youtube-dl for FlexGet', sprintf('%s install --upgrade youtube_dl', escapeshellarg($pipBin)));
 
-
-// Keep a single entry point for pip operations.
-passthru($pipCmd.' install --upgrade youtube_dl');
+if (!is_link('/usr/local/bin/flexget') || readlink('/usr/local/bin/flexget') !== $venvDir.'/bin/flexget') {
+    runStep('Linking FlexGet CLI', sprintf('ln -sf %s %s', escapeshellarg($venvDir.'/bin/flexget'), escapeshellarg('/usr/local/bin/flexget')));
+}
