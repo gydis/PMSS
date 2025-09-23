@@ -385,7 +385,8 @@ function stageSnapshot(string $tmp, bool $dryRun): void
             }
             // Remove previous contents without tripping over missing glob matches.
             runFatal('find /scripts -mindepth 1 -maxdepth 1 -exec rm -rf {} +', EXIT_COPY);
-            runFatal(sprintf('cp -rp %s/. %s', escapeshellarg($source), escapeshellarg('/scripts')), EXIT_COPY);
+            // Preserve symlinks (e.g. scripts/update -> lib/update) when refreshing the tree.
+            runFatal(sprintf('cp -a %s/. %s', escapeshellarg($source), escapeshellarg('/scripts')), EXIT_COPY);
         },
         'etc' => function (string $source) {
             if (is_dir($source.'/skel') && is_dir('/etc/skel')) {
@@ -394,7 +395,7 @@ function stageSnapshot(string $tmp, bool $dryRun): void
             runFatal('cp -rpu '.escapeshellarg($source).' /', EXIT_COPY);
         },
         'var' => function (string $source) {
-            runFatal('cp -rp '.escapeshellarg($source).' /', EXIT_COPY);
+            runFatal('cp -a '.escapeshellarg($source).' /', EXIT_COPY);
         },
     ];
 
@@ -428,7 +429,7 @@ function flattenScriptsLayout(): void
     }
     logmsg('Detected nested /scripts/scripts layout, flattening');
     logEvent('scripts_flatten', ['status' => 'start']);
-    runSoft(sprintf('cp -rp %s/. %s', escapeshellarg($nested), escapeshellarg('/scripts')));
+    runSoft(sprintf('cp -a %s/. %s', escapeshellarg($nested), escapeshellarg('/scripts')));
     runSoft('rm -rf '.escapeshellarg($nested));
     if (!file_exists('/scripts/util/update-step2.php')) {
         logmsg('[WARN] update-step2.php missing after flattening');

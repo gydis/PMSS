@@ -77,24 +77,23 @@ if (!function_exists('logmsg')) {
     }
 }
 
+$effectiveRepoVersion = $repoVersion > 0 ? $repoVersion : $reportedVersion;
+
+logmsg('update-step2.php starting');
+pmssLogJson(['event' => 'phase', 'name' => 'update-step2', 'status' => 'start']);
+
 pmssConfigureAptNonInteractive('logmsg');
+pmssRefreshRepositories($distroName, $effectiveRepoVersion, 'logmsg');
 pmssCompletePendingDpkg();
-$dpkgTargetVersion = $repoVersion > 0 ? $repoVersion : $reportedVersion;
-if ($dpkgTargetVersion > 0) {
-    pmssApplyDpkgSelections($dpkgTargetVersion);
-}
+pmssApplyDpkgSelections($effectiveRepoVersion > 0 ? $effectiveRepoVersion : null);
 if ($repoLogMessage !== '') {
     logmsg($repoLogMessage);
 }
 
 require_once __DIR__.'/../lib/update/users.php';
 
-// Mark the start of this update step in the log.
-logmsg('update-step2.php starting');
-pmssLogJson(['event' => 'phase', 'name' => 'update-step2', 'status' => 'start']);
-
 // Refresh repositories and install queued packages before any other orchestration.
-pmssRefreshRepositories($distroName, $repoVersion, 'logmsg');
+pmssRefreshRepositories($distroName, $effectiveRepoVersion, 'logmsg');
 pmssAutoremovePackages();
 include_once '/scripts/lib/update/apps/packages.php';
 pmssFlushPackageQueue();

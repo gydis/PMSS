@@ -14,7 +14,8 @@ if (!function_exists('pmssRefreshRepositories')) {
     {
         $log = pmssSelectLogger($logger);
         if ($distroVersion <= 0) {
-            $log(sprintf('Skipping repository refresh: unsupported version %d', $distroVersion));
+            $log(sprintf('Repository version unresolved for %s; reusing existing sources', $distroName));
+            runStep('Refreshing apt package index (existing sources)', aptCmd('update'));
             return;
         }
         $sourcesPath = pmssAptSourcesPath();

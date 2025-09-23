@@ -11,7 +11,7 @@ if (!function_exists('logmsg')) {
     }
 }
 
-require_once dirname(__DIR__, 3).'/lib/update/runtime/profile.php';
+require_once dirname(__DIR__, 2).'/update/runtime/profile.php';
 
 class RuntimeProfileTest extends TestCase
 {

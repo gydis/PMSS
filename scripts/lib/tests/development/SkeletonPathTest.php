@@ -21,4 +21,11 @@ class SkeletonPathTest extends TestCase
             }
         }
     }
+
+    public function testSkeletonPathHandlesTrailingSlash(): void
+    {
+        putenv('PMSS_SKEL_DIR=/etc/skel/');
+        $this->assertEquals('/etc/skel/foo', \pmssSkeletonPath('foo'));
+        putenv('PMSS_SKEL_DIR');
+    }
 }

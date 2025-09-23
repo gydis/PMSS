@@ -128,11 +128,13 @@ class UpdateHelpersRepoBehaviourTest extends TestCase
     {
         $target = $this->makeTempSources('unchanged');
         putenv('PMSS_APT_SOURCES_PATH='.$target);
+        putenv('PMSS_DRY_RUN=1');
         $logs = [];
         \pmssRefreshRepositories('debian', 0, function (string $msg) use (&$logs): void { $logs[] = $msg; });
         $this->assertEquals('unchanged', file_get_contents($target));
         $this->assertTrue((bool)array_filter($logs, static fn($m) => str_contains($m, 'Skipping repository refresh')));
         $this->clearEnv('PMSS_APT_SOURCES_PATH');
+        putenv('PMSS_DRY_RUN');
     }
 
     private function makeTempSources(string $content): string

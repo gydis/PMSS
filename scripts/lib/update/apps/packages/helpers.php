@@ -18,6 +18,10 @@ if (!isset($GLOBALS['PMSS_POST_INSTALL_COMMANDS'])) {
     $GLOBALS['PMSS_POST_INSTALL_COMMANDS'] = [];
 }
 
+if (!isset($GLOBALS['PMSS_FAILED_PACKAGE_INSTALLS'])) {
+    $GLOBALS['PMSS_FAILED_PACKAGE_INSTALLS'] = [];
+}
+
 function pmssQueuePackages(array $packages, ?string $target = null): void
 {
     global $PMSS_PACKAGE_QUEUE;
@@ -42,6 +46,7 @@ function pmssFlushPackageQueue(): void
 {
     global $PMSS_PACKAGE_QUEUE;
     global $PMSS_POST_INSTALL_COMMANDS;
+    global $PMSS_FAILED_PACKAGE_INSTALLS;
     if (empty($PMSS_PACKAGE_QUEUE)) {
         return;
     }
@@ -54,7 +59,10 @@ function pmssFlushPackageQueue(): void
 
         [$installable, $missing] = pmssFilterAvailablePackages($packages);
         if (!empty($missing)) {
-            pmssLogPackageNotice('Skipping unavailable packages: '.implode(', ', $missing));
+            $context = $target === PMSS_PACKAGE_QUEUE_DEFAULT ? 'default queue' : ('queue '.$target);
+            $message = sprintf('Skipping unavailable packages in %s: %s', $context, implode(', ', $missing));
+            pmssLogPackageNotice('[WARN] '.$message);
+            $PMSS_FAILED_PACKAGE_INSTALLS[] = $message;
         }
         if (empty($installable)) {
             continue;
@@ -62,18 +70,23 @@ function pmssFlushPackageQueue(): void
 
         $pkgArgs = implode(' ', array_map('escapeshellarg', $installable));
         if ($target === PMSS_PACKAGE_QUEUE_DEFAULT) {
-            $cmd = 'apt-get install -y '.$pkgArgs;
+            $cmd = aptCmd('install -y '.$pkgArgs);
             $label = 'Installing packages';
         } else {
-            $cmd = sprintf('apt-get install -y -t %s %s', escapeshellarg($target), $pkgArgs);
+            $cmd = aptCmd('install -y -t '.escapeshellarg($target).' '.$pkgArgs);
             $label = 'Installing packages ('.$target.')';
         }
 
         $rc = runStep($label, $cmd);
         if ($rc !== 0) {
             $context = $target === PMSS_PACKAGE_QUEUE_DEFAULT ? 'package queue' : 'package queue '.$target;
-            runStep('Attempting apt fix-broken install ('.$context.')', 'apt-get --fix-broken install -y');
-            runStep($label.' retry', $cmd);
+            runStep('Attempting apt fix-broken install ('.$context.')', aptCmd('--fix-broken install -y'));
+            $retryRc = runStep($label.' retry', $cmd);
+            if ($retryRc !== 0) {
+                $message = sprintf('Final package install failure in %s: %s', $context, implode(', ', $installable));
+                pmssLogPackageNotice('[ERROR] '.$message);
+                $PMSS_FAILED_PACKAGE_INSTALLS[] = $message;
+            }
         }
     }
 
@@ -84,6 +97,21 @@ function pmssFlushPackageQueue(): void
             runStep($description, $command);
         }
         $PMSS_POST_INSTALL_COMMANDS = [];
+    }
+
+    if (!empty($PMSS_FAILED_PACKAGE_INSTALLS)) {
+        $summary = array_values(array_unique($PMSS_FAILED_PACKAGE_INSTALLS));
+        pmssLogPackageNotice('[ERROR] Package handling completed with issues: '.implode(' | ', $summary));
+        if (function_exists('pmssLogJson')) {
+            pmssLogJson([
+                'event'   => 'package_queue_failure',
+                'issues'  => $summary,
+            ]);
+        }
+        putenv('PMSS_PACKAGE_INSTALL_FAILURES='.count($summary));
+        $PMSS_FAILED_PACKAGE_INSTALLS = [];
+    } else {
+        putenv('PMSS_PACKAGE_INSTALL_FAILURES=0');
     }
 }
 

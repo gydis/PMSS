@@ -88,13 +88,17 @@ if (!function_exists('pmssApplyDpkgSelections')) {
             return;
         }
 
+        runStep('Refreshing apt cache before dpkg selection', aptCmd('update'));
         $cmd = sprintf('dpkg --set-selections < %s', escapeshellarg($selections));
         runStep('Applying dpkg selection baseline', $cmd);
-        $installCmd = 'apt-get dselect-upgrade -y';
+        $installCmd = aptCmd('dselect-upgrade -y');
         $rc = runStep('Installing packages from selection baseline', $installCmd);
         if ($rc !== 0) {
-            runStep('Attempting apt fix-broken install (dpkg baseline)', 'apt-get --fix-broken install -y');
-            runStep('Retrying package selection install', $installCmd);
+            runStep('Attempting apt fix-broken install (dpkg baseline)', aptCmd('--fix-broken install -y'));
+            $retryRc = runStep('Retrying package selection install', $installCmd);
+            if ($retryRc !== 0 && function_exists('logmsg')) {
+                logmsg('[ERROR] Package baseline installation still failing after retry');
+            }
         }
     }
 }

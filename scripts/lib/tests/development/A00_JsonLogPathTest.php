@@ -9,6 +9,7 @@ class A00_JsonLogPathTest extends TestCase
 {
     public function testJsonPathReadsEnvOnFirstCall(): void
     {
+        $this->resetJsonLogPath();
         $tmp = $this->tmpFile();
         putenv('PMSS_JSON_LOG='.$tmp);
         $this->assertEquals($tmp, \pmssJsonLogPath());
@@ -16,6 +17,7 @@ class A00_JsonLogPathTest extends TestCase
 
     public function testLogJsonWritesLine(): void
     {
+        $this->resetJsonLogPath();
         // Do not change env because pmssJsonLogPath caches on first call; instead, resolve cached path
         $path = \pmssJsonLogPath();
         if ($path === '') {
@@ -39,5 +41,12 @@ class A00_JsonLogPathTest extends TestCase
             touch($f);
         }
         return $f;
+    }
+
+    private function resetJsonLogPath(): void
+    {
+        $ref = new \ReflectionFunction('pmssJsonLogPath');
+        $ref->setStaticVariable('path', null);
+        putenv('PMSS_JSON_LOG');
     }
 }

@@ -397,6 +397,9 @@ install_root_shell_defaults
 log_step "Adjusting /home permissions"
 chmod o-rw /home
 
+log_step "Refreshing package lists (final pass before update.php)"
+apt update
+
 log_step "Handing off to /scripts/update.php"
 /scripts/update.php "${UPDATE_ARGS[@]}"
 
