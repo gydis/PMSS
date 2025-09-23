@@ -11,12 +11,13 @@ $changedConfig = array();
 
 foreach($users AS $thisUser) {    // Loop users checking their instances
     if (empty($thisUser)) continue;
+    $escapedUser = escapeshellarg($thisUser);
     
         // if user is suspended, skip it
     if (file_exists("/home/{$thisUser}/www-disabled") or 
         !file_exists("/home/{$thisUser}/www") ) {
             echo "User: {$thisUser} is suspended\n";
-            passthru("killall -9 -u {$thisUser}");  // Ensure nothing for the user is running
+            passthru('killall -9 -u ' . $escapedUser);  // Ensure nothing for the user is running
             continue;  //Suspended
     }
     //echo "Checking: {$thisUser}\n";
@@ -25,12 +26,14 @@ foreach($users AS $thisUser) {    // Loop users checking their instances
     $start = false;
     $pid = null;
     
-    $instances = shell_exec('pgrep -u' . $thisUser . ' -f rtorrentExecute.php');
+    $instances = shell_exec('pgrep -u ' . $escapedUser . ' -f rtorrentExecute.php');
     //echo "Instances:\n{$instances}\n";
 
     // Let's check socket file
     if (!file_exists("/home/{$thisUser}/.rtorrent.socket")) {
-        if (!empty($instances)) `killall -9 -u {$thisUser} 'rtorrent main'`;
+        if (!empty($instances)) {
+            shell_exec('killall -9 -u ' . $escapedUser . ' ' . escapeshellarg('rtorrent main'));
+        }
         $instances = '';
     }
 
@@ -56,18 +59,18 @@ foreach($users AS $thisUser) {    // Loop users checking their instances
                  start($thisUser);
              }
          } else {
-             echo "No certainty, killall!\n";
-             passthru('killall -u ' . $thisUser);
-             sleep(3); // We got to wait to make certain kill was success.
-             
-             start($thisUser);
-             continue;
-         }
+            echo "No certainty, killall!\n";
+            passthru('killall -u ' . $escapedUser);
+            sleep(3); // We got to wait to make certain kill was success.
+            
+            start($thisUser);
+            continue;
+        }
     } else {    // Process is running, but no (valid or otherwise) lock file
         
         echo "No lock file found! Killall, restart.\n";
-        passthru('killall -9 "rtorrent main" -u '. $thisUser);
-        passthru('killall -9 /usr/local/bin/rtorrent -u '. $thisUser);
+        passthru('killall -9 -u ' . $escapedUser . ' ' . escapeshellarg('rtorrent main'));
+        passthru('killall -9 -u ' . $escapedUser . ' ' . escapeshellarg('/usr/local/bin/rtorrent'));
         sleep(3);
         start($thisUser);
     }
@@ -89,6 +92,6 @@ if (count($changedConfig) != 0) {
 
 function start($user) {    // this actually calls the function to start rTorrent :)
     echo "Starting rTorrent for user: {$user}\n";
-    passthru('/scripts/startRtorrent ' . $user);
+    passthru('/scripts/startRtorrent ' . escapeshellarg($user));
     sleep(1);
 }

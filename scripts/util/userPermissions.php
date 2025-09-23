@@ -60,6 +60,8 @@ $chownItems = [
     ["/home/{$thisUser}/.lighttpd/.htpasswd", "{$thisUser}.{$thisUser}"],
     ["/home/{$thisUser}/.lighttpd/", "{$thisUser}.{$thisUser}", true],
     ["/home/{$thisUser}/", "{$thisUser}.{$thisUser}", true],
+    ["/home/{$thisUser}/.trafficData", "root.{$thisUser}"],
+    ["/home/{$thisUser}/.trafficDataLocal", "root.{$thisUser}"],
     ["/home/{$thisUser}/www/rutorrent/share/users/{$thisUser}/settings", "{$thisUser}.{$thisUser}"],
     ["/home/{$thisUser}/www/rutorrent/share/users/{$thisUser}/settings/retrackers.dat", "{$thisUser}.{$thisUser}"],
     ["/home/{$thisUser}/www/rutorrent/share/users/{$thisUser}", "{$thisUser}.{$thisUser}"],

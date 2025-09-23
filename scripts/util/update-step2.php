@@ -113,6 +113,13 @@ pmssRefreshRepositories($distroName, $effectiveRepoVersion, 'logmsg');
 pmssAutoremovePackages();
 pmssCompletePendingDpkg();
 $dpkgBaselineOk = pmssApplyDpkgSelections($effectiveRepoVersion > 0 ? $effectiveRepoVersion : null);
+runStep('Stopping Apache httpd (legacy)', 'systemctl stop apache2 || true');
+runStep('Disabling Apache httpd service', 'systemctl disable apache2 || true');
+runStep('Masking Apache httpd service', 'systemctl mask apache2 || true');
+runStep('Removing residual Apache packages', aptCmd('purge -y apache2 apache2-bin apache2-data apache2-utils libapache2-mod-php7.4 || true'));
+runStep('Stopping Apache httpd (legacy)', 'systemctl stop apache2 || true');
+runStep('Disabling Apache httpd service', 'systemctl disable apache2 || true');
+runStep('Masking Apache httpd service', 'systemctl mask apache2 || true');
 if ($repoLogMessage !== '') {
     logmsg($repoLogMessage);
 }
@@ -133,6 +140,8 @@ pmssRefreshRepositories($distroName, $effectiveRepoVersion, 'logmsg');
 pmssAutoremovePackages();
 include_once '/scripts/lib/update/apps/packages.php';
 pmssFlushPackageQueue();
+pmssAutoremovePackages();
+runStep('Attempting apt fix-broken install (post-queue)', aptCmd('--fix-broken install -y'));
 pmssAutoremovePackages();
 
 $packageWarnings = (int) (getenv('PMSS_PACKAGE_INSTALL_WARNINGS') ?: 0);

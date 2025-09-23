@@ -16,10 +16,15 @@ if (count($users) == 0) die("No users in this system!\n");
 $trafficData = array();
 foreach($users AS $thisUser) {
     $userTrafficLimitFile = "/etc/seedbox/runtime/trafficLimits/{$thisUser}";
-    if (!file_exists("/home/{$thisUser}/.trafficData") or
+    $trafficDataFile = "/home/{$thisUser}/.trafficData";
+    if (!file_exists($trafficDataFile) or
         !file_exists($userTrafficLimitFile) ) continue;
-    
-    $data = unserialize( file_get_contents("/home/{$thisUser}/.trafficData") );
+
+    $data = pmssReadTrafficData($trafficDataFile, $thisUser);
+    if ($data === null) {
+        echo date('Y-m-d H:i:s') . ": Skipping {$thisUser}, invalid traffic data file\n";
+        continue;
+    }
     $trafficLimit = file_get_contents($userTrafficLimitFile);
     if (empty($trafficLimit) or
         $trafficLimit == 0) continue;
@@ -27,6 +32,54 @@ foreach($users AS $thisUser) {
     $trafficData[$thisUser]['traffic'] = ($data['raw']['month'] / 1024);   // Set to GiB
     $trafficData[$thisUser]['trafficLimit'] = $trafficLimit;
     
+}
+
+/**
+ * Safely read traffic data snapshot for a user, enforcing ownership and structure.
+ */
+function pmssReadTrafficData(string $path, string $username): ?array
+{
+    if (is_link($path)) {
+        return null;
+    }
+
+    $stats = @stat($path);
+    if ($stats === false) {
+        return null;
+    }
+
+    if ($stats['uid'] !== 0) {
+        return null;
+    }
+
+    $mode = $stats['mode'] & 0777;
+    if (($mode & 0022) !== 0) { // group/other writable
+        return null;
+    }
+
+    $group = @posix_getgrgid($stats['gid']);
+    if ($group !== false) {
+        $groupName = $group['name'];
+        if ($groupName !== $username && $groupName !== 'root') {
+            return null;
+        }
+    }
+
+    $blob = @file_get_contents($path);
+    if ($blob === false || $blob === '') {
+        return null;
+    }
+
+    $data = @unserialize($blob, ['allowed_classes' => false]);
+    if (!is_array($data) || !isset($data['raw']) || !is_array($data['raw'])) {
+        return null;
+    }
+
+    if (!isset($data['raw']['month']) || !is_numeric($data['raw']['month'])) {
+        return null;
+    }
+
+    return $data;
 }
 
 
@@ -122,4 +175,3 @@ function setRatelimitOld($user, $trafficLimit, $enable=true) {
     }
 
 }
-

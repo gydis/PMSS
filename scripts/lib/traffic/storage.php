@@ -43,9 +43,35 @@ class TrafficStorage
         $homePath   = $this->homeDir.'/'.$targetUser;
 
         if (is_dir($homePath)) {
-            @file_put_contents($homePath.'/'.$filename, $serialized);
+            $userPath = $homePath.'/'.$filename;
+            @file_put_contents($userPath, $serialized);
+            $this->protectUserTrafficFile($userPath, $targetUser);
         }
 
-        @file_put_contents($this->statsDir.'/'.$user, $serialized);
+        $runtimePath = $this->statsDir.'/'.$user;
+        @file_put_contents($runtimePath, $serialized);
+        $this->protectRuntimeFile($runtimePath);
+    }
+
+    /**
+     * Enforce root ownership and read-only access for tenants.
+     */
+    private function protectUserTrafficFile(string $path, string $group): void
+    {
+        @chown($path, 'root');
+        if ($group !== '') {
+            @chgrp($path, $group);
+        }
+        @chmod($path, 0640);
+    }
+
+    /**
+     * Restrict runtime cache files to root-only access.
+     */
+    private function protectRuntimeFile(string $path): void
+    {
+        @chown($path, 'root');
+        @chgrp($path, 'root');
+        @chmod($path, 0600);
     }
 }
