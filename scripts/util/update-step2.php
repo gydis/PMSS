@@ -7,6 +7,10 @@
  * (/scripts/update.php) refreshes itself. Tasks include repository setup,
  * service configuration, user environment maintenance and security tweaks.
  *
+ * Package phase invariant: repository templating, dpkg baseline replay, and
+ * queued package installs must succeed before any other module executes. Do
+ * not insert additional orchestration ahead of the package phase.
+ *
  * This file is refreshed from GitHub by /scripts/update.php prior to each run.
  * Keep local changes minimal or contribute them upstream.
  */
@@ -77,6 +81,9 @@ if (!function_exists('logmsg')) {
     }
 }
 
+$GLOBALS['PMSS_PACKAGES_READY'] = false;
+putenv('PMSS_PACKAGE_PHASE=initializing');
+
 $effectiveRepoVersion = $repoVersion > 0 ? $repoVersion : $reportedVersion;
 
 logmsg('update-step2.php starting');
@@ -85,9 +92,14 @@ pmssLogJson(['event' => 'phase', 'name' => 'update-step2', 'status' => 'start'])
 pmssConfigureAptNonInteractive('logmsg');
 pmssRefreshRepositories($distroName, $effectiveRepoVersion, 'logmsg');
 pmssCompletePendingDpkg();
-pmssApplyDpkgSelections($effectiveRepoVersion > 0 ? $effectiveRepoVersion : null);
+$dpkgBaselineOk = pmssApplyDpkgSelections($effectiveRepoVersion > 0 ? $effectiveRepoVersion : null);
 if ($repoLogMessage !== '') {
     logmsg($repoLogMessage);
+}
+if (!$dpkgBaselineOk) {
+    logmsg('[ERROR] Failed to apply dpkg selection baseline; aborting prior to package phase');
+    pmssLogJson(['event' => 'package_phase', 'status' => 'error', 'reason' => 'dpkg_baseline']);
+    exit(1);
 }
 
 require_once __DIR__.'/../lib/update/users.php';
@@ -98,6 +110,17 @@ pmssAutoremovePackages();
 include_once '/scripts/lib/update/apps/packages.php';
 pmssFlushPackageQueue();
 pmssAutoremovePackages();
+
+$packageFailures = (int) (getenv('PMSS_PACKAGE_INSTALL_FAILURES') ?: 0);
+if ($packageFailures > 0) {
+    logmsg(sprintf('[ERROR] Package installation phase reported %d failure(s); aborting update-step2', $packageFailures));
+    pmssLogJson(['event' => 'package_phase', 'status' => 'error', 'reason' => 'queue_failures', 'count' => $packageFailures]);
+    exit(1);
+}
+
+$GLOBALS['PMSS_PACKAGES_READY'] = true;
+putenv('PMSS_PACKAGE_PHASE=complete');
+pmssLogJson(['event' => 'package_phase', 'status' => 'ok']);
 
 // Only after package installation has stabilised do we update legacy soft.sh.
 pmssEnsureLatestUpdater();

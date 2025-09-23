@@ -7,6 +7,17 @@ require_once __DIR__.'/../common/TestCase.php';
 
 class ServiceIntentTest extends TestCase
 {
+    private const SYSTEMD_ENABLED_STATES = [
+        'enabled',
+        'enabled-runtime',
+        'static',
+        'linked',
+        'linked-runtime',
+        'alias',
+        'indirect',
+        'generated',
+    ];
+
     /**
      * Ensure the matrix lists every core daemon plus detection hints.
      */
@@ -72,7 +83,7 @@ class ServiceIntentTest extends TestCase
                     continue;
                 }
                 $state = $this->systemctlState($unit);
-                if (in_array($state, ['enabled', 'static', 'linked-runtime', 'linked', 'alias'], true)) {
+                if ($state !== null && in_array($state, self::SYSTEMD_ENABLED_STATES, true)) {
                     $enabled = true;
                     break;
                 }

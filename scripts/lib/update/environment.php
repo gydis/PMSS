@@ -66,8 +66,10 @@ if (!function_exists('pmssCompletePendingDpkg')) {
 if (!function_exists('pmssApplyDpkgSelections')) {
     /**
      * Apply the baseline dpkg selection snapshot so required packages stay present.
+     *
+     * @return bool True when the baseline was parsed and applied successfully.
      */
-    function pmssApplyDpkgSelections(?int $distroVersion = null): void
+    function pmssApplyDpkgSelections(?int $distroVersion = null): bool
     {
         $baseDir = __DIR__.'/dpkg';
         $candidates = [];
@@ -85,12 +87,60 @@ if (!function_exists('pmssApplyDpkgSelections')) {
             }
         }
         if ($selections === null) {
-            return;
+            return true;
         }
 
         runStep('Refreshing apt cache before dpkg selection', aptCmd('update'));
-        $cmd = sprintf('dpkg --set-selections < %s', escapeshellarg($selections));
-        runStep('Applying dpkg selection baseline', $cmd);
+        runStep('Refreshing dpkg availability database', 'apt-cache dumpavail | dpkg --merge-avail');
+
+        $selectionPath = $selections;
+        $tmpSelection  = null;
+        $lines         = @file($selections, FILE_IGNORE_NEW_LINES);
+        $success       = true;
+        if ($lines !== false) {
+            $sanitised = [];
+            foreach ($lines as $idx => $line) {
+                $trimmed = trim($line);
+                if ($trimmed === '') {
+                    continue;
+                }
+                $parts = preg_split('/\s+/', $trimmed);
+                if (count($parts) < 2) {
+                    if (function_exists('logmsg')) {
+                        logmsg(sprintf('[WARN] Ignoring malformed dpkg selection line %d: %s', $idx + 1, $trimmed));
+                    }
+                    $success = false;
+                    continue;
+                }
+                $package = $parts[0];
+                $state   = $parts[1];
+                if (!preg_match('/^[a-z0-9.+:-]+$/i', $package) || !preg_match('/^(install|hold|purge|deinstall)$/i', $state)) {
+                    if (function_exists('logmsg')) {
+                        logmsg(sprintf('[WARN] Invalid dpkg selection entry at line %d: %s', $idx + 1, $trimmed));
+                    }
+                    $success = false;
+                    continue;
+                }
+                $sanitised[] = $package."\t".strtolower($state);
+            }
+
+            if (!empty($sanitised)) {
+                $tmpSelection = tempnam(sys_get_temp_dir(), 'pmss-selections-');
+                if ($tmpSelection !== false && file_put_contents($tmpSelection, implode(PHP_EOL, $sanitised).PHP_EOL) !== false) {
+                    $selectionPath = $tmpSelection;
+                } elseif ($tmpSelection !== false) {
+                    @unlink($tmpSelection);
+                    $tmpSelection = null;
+                    $success      = false;
+                }
+            }
+        }
+
+        $cmd = sprintf('dpkg --set-selections < %s', escapeshellarg($selectionPath));
+        $rc = runStep('Applying dpkg selection baseline', $cmd);
+        if ($rc !== 0) {
+            $success = false;
+        }
         $installCmd = aptCmd('dselect-upgrade -y');
         $rc = runStep('Installing packages from selection baseline', $installCmd);
         if ($rc !== 0) {
@@ -99,7 +149,14 @@ if (!function_exists('pmssApplyDpkgSelections')) {
             if ($retryRc !== 0 && function_exists('logmsg')) {
                 logmsg('[ERROR] Package baseline installation still failing after retry');
             }
+            $success = $success && ($retryRc === 0);
         }
+
+        if ($tmpSelection !== null) {
+            @unlink($tmpSelection);
+        }
+
+        return $success;
     }
 }
 
