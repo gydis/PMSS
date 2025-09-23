@@ -1,0 +1,8 @@
+{
+    "ramBlock": 250,
+    "peers": {
+        "minimum": 1,
+        "maximum": 12
+    },
+    "uploadSlots": 8
+}

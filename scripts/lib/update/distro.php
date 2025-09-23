@@ -78,19 +78,3 @@ if (!function_exists('pmssVersionFromCodename')) {
         }
     }
 }
-
-if (!function_exists('pmssEnsureLatestUpdater')) {
-    /**
-     * Refresh update.php from upstream if the legacy soft.sh flow is detected.
-     */
-    function pmssEnsureLatestUpdater(): void
-    {
-        $updateSource = @file_get_contents('/scripts/update.php');
-        if ($updateSource === false || strpos($updateSource, 'soft.sh') === false) {
-            return;
-        }
-        runStep('Fetching latest update.php from GitHub', 'wget -qO /scripts/update.php https://raw.githubusercontent.com/MagnaCapax/PMSS/main/scripts/update.php');
-        runStep('Executing refreshed update.php', '/scripts/update.php');
-        die();
-    }
-}

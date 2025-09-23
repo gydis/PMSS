@@ -10,17 +10,20 @@
  * @version 0.9.1
  */
 class rtorrentConfig {
+	/**
+	 * Local template/resource paths used when defaults are not injected.
+	 */
+	private const RESOURCE_CONFIG_PATH = '/etc/seedbox/config/rtorrent.resources.json';
+	private const TEMPLATE_PATH = '/etc/seedbox/config/template.rtorrent.rc';
 	protected $_resourceConfig;
 	protected $_template;
 	
 	function __construct($resourceConfig = array(), $template = null) {
 		if (count($resourceConfig) == 0) {
-			$resourceConfig = unserialize(
-				file_get_contents('http://pulsedmedia.com/remote/config/rtorrent.php')
-			);			
+			$resourceConfig = $this->loadDefaultResourceConfig();
 		}
 		if ($template == null or empty($template ) )
-		    $template = file_get_contents('http://pulsedmedia.com/remote/config/20200207-rtorrentTemplate.txt');
+		    $template = $this->loadDefaultTemplate();
 		
 		$this->_template = $template;
 		$this->_resourceConfig = $resourceConfig;
@@ -198,8 +201,8 @@ class rtorrentConfig {
 	 * 
 	 */
 	protected function _checkResourceConfig() {
-        // This function basicly does nothing as the config is fetched from server
-        
+		// Legacy helper keeps downstream code resilient if config misses fields.
+		
 		$config = &$this->_resourceConfig;
 
 			// We use ram blocks for calculations, ram defined in Mb
@@ -216,6 +219,36 @@ class rtorrentConfig {
 		if (!isset($config['uploadSlots'])) {
 			$config['uploadSlots'] = 7;
 		}
+	}
+
+	/**
+	 * Load the default resource configuration JSON from disk.
+	 */
+	private function loadDefaultResourceConfig(): array
+	{
+		$path = self::RESOURCE_CONFIG_PATH;
+		$contents = @file_get_contents($path);
+		if ($contents === false) {
+			throw new RuntimeException('Unable to read rTorrent resource config: ' . $path);
+		}
+		$data = json_decode($contents, true);
+		if (!is_array($data)) {
+			throw new RuntimeException('Invalid rTorrent resource config JSON in ' . $path);
+		}
+		return $data;
+	}
+
+	/**
+	 * Load the default rTorrent template from disk.
+	 */
+	private function loadDefaultTemplate(): string
+	{
+		$path = self::TEMPLATE_PATH;
+		$contents = @file_get_contents($path);
+		if ($contents === false) {
+			throw new RuntimeException('Unable to read rTorrent template: ' . $path);
+		}
+		return $contents;
 	}
 	
 	protected function _log($level, $message) {

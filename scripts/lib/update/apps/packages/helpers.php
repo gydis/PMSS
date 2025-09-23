@@ -18,8 +18,12 @@ if (!isset($GLOBALS['PMSS_POST_INSTALL_COMMANDS'])) {
     $GLOBALS['PMSS_POST_INSTALL_COMMANDS'] = [];
 }
 
-if (!isset($GLOBALS['PMSS_FAILED_PACKAGE_INSTALLS'])) {
-    $GLOBALS['PMSS_FAILED_PACKAGE_INSTALLS'] = [];
+if (!isset($GLOBALS['PMSS_PACKAGE_WARNINGS'])) {
+    $GLOBALS['PMSS_PACKAGE_WARNINGS'] = [];
+}
+
+if (!isset($GLOBALS['PMSS_PACKAGE_ERRORS'])) {
+    $GLOBALS['PMSS_PACKAGE_ERRORS'] = [];
 }
 
 function pmssQueuePackages(array $packages, ?string $target = null): void
@@ -46,7 +50,8 @@ function pmssFlushPackageQueue(): void
 {
     global $PMSS_PACKAGE_QUEUE;
     global $PMSS_POST_INSTALL_COMMANDS;
-    global $PMSS_FAILED_PACKAGE_INSTALLS;
+    global $PMSS_PACKAGE_WARNINGS;
+    global $PMSS_PACKAGE_ERRORS;
     if (empty($PMSS_PACKAGE_QUEUE)) {
         return;
     }
@@ -62,7 +67,7 @@ function pmssFlushPackageQueue(): void
             $context = $target === PMSS_PACKAGE_QUEUE_DEFAULT ? 'default queue' : ('queue '.$target);
             $message = sprintf('Skipping unavailable packages in %s: %s', $context, implode(', ', $missing));
             pmssLogPackageNotice('[WARN] '.$message);
-            $PMSS_FAILED_PACKAGE_INSTALLS[] = $message;
+            $PMSS_PACKAGE_WARNINGS[] = $message;
         }
         if (empty($installable)) {
             continue;
@@ -85,7 +90,7 @@ function pmssFlushPackageQueue(): void
             if ($retryRc !== 0) {
                 $message = sprintf('Final package install failure in %s: %s', $context, implode(', ', $installable));
                 pmssLogPackageNotice('[ERROR] '.$message);
-                $PMSS_FAILED_PACKAGE_INSTALLS[] = $message;
+                $PMSS_PACKAGE_ERRORS[] = $message;
             }
         }
     }
@@ -99,19 +104,28 @@ function pmssFlushPackageQueue(): void
         $PMSS_POST_INSTALL_COMMANDS = [];
     }
 
-    if (!empty($PMSS_FAILED_PACKAGE_INSTALLS)) {
-        $summary = array_values(array_unique($PMSS_FAILED_PACKAGE_INSTALLS));
-        pmssLogPackageNotice('[ERROR] Package handling completed with issues: '.implode(' | ', $summary));
+    if (!empty($PMSS_PACKAGE_WARNINGS)) {
+        $summary = array_values(array_unique($PMSS_PACKAGE_WARNINGS));
+        pmssLogPackageNotice('[WARN] Package queue warnings: '.implode(' | ', $summary));
+        putenv('PMSS_PACKAGE_INSTALL_WARNINGS='.count($summary));
+        $PMSS_PACKAGE_WARNINGS = [];
+    } else {
+        putenv('PMSS_PACKAGE_INSTALL_WARNINGS=0');
+    }
+
+    if (!empty($PMSS_PACKAGE_ERRORS)) {
+        $summary = array_values(array_unique($PMSS_PACKAGE_ERRORS));
+        pmssLogPackageNotice('[ERROR] Package queue errors: '.implode(' | ', $summary));
         if (function_exists('pmssLogJson')) {
             pmssLogJson([
                 'event'   => 'package_queue_failure',
                 'issues'  => $summary,
             ]);
         }
-        putenv('PMSS_PACKAGE_INSTALL_FAILURES='.count($summary));
-        $PMSS_FAILED_PACKAGE_INSTALLS = [];
+        putenv('PMSS_PACKAGE_INSTALL_ERRORS='.count($summary));
+        $PMSS_PACKAGE_ERRORS = [];
     } else {
-        putenv('PMSS_PACKAGE_INSTALL_FAILURES=0');
+        putenv('PMSS_PACKAGE_INSTALL_ERRORS=0');
     }
 }
 

@@ -117,9 +117,13 @@ if ($repoLogMessage !== '') {
     logmsg($repoLogMessage);
 }
 if (!$dpkgBaselineOk) {
-    logmsg('[ERROR] Failed to apply dpkg selection baseline; aborting prior to package phase');
-    pmssLogJson(['event' => 'package_phase', 'status' => 'error', 'reason' => 'dpkg_baseline']);
-    exit(1);
+    logmsg('[WARN] Dpkg baseline application reported issues; attempting recovery');
+    runStep('Attempting apt fix-broken install (dpkg baseline recovery)', aptCmd('--fix-broken install -y'));
+    $dpkgBaselineOk = pmssApplyDpkgSelections($effectiveRepoVersion > 0 ? $effectiveRepoVersion : null);
+    if (!$dpkgBaselineOk) {
+        logmsg('[ERROR] Dpkg baseline still failing after recovery attempt; continuing with caution');
+        pmssLogJson(['event' => 'package_phase', 'status' => 'warn', 'reason' => 'dpkg_baseline']);
+    }
 }
 
 require_once __DIR__.'/../lib/update/users.php';
@@ -131,19 +135,24 @@ include_once '/scripts/lib/update/apps/packages.php';
 pmssFlushPackageQueue();
 pmssAutoremovePackages();
 
-$packageFailures = (int) (getenv('PMSS_PACKAGE_INSTALL_FAILURES') ?: 0);
-if ($packageFailures > 0) {
-    logmsg(sprintf('[ERROR] Package installation phase reported %d failure(s); aborting update-step2', $packageFailures));
-    pmssLogJson(['event' => 'package_phase', 'status' => 'error', 'reason' => 'queue_failures', 'count' => $packageFailures]);
-    exit(1);
+$packageWarnings = (int) (getenv('PMSS_PACKAGE_INSTALL_WARNINGS') ?: 0);
+$packageErrors   = (int) (getenv('PMSS_PACKAGE_INSTALL_ERRORS') ?: 0);
+
+if ($packageWarnings > 0) {
+    logmsg(sprintf('[WARN] Package phase completed with %d warning(s); see earlier log entries for details', $packageWarnings));
 }
+if ($packageErrors > 0) {
+    logmsg(sprintf('[ERROR] Package phase could not install %d item(s); continuing with caution', $packageErrors));
+    pmssLogJson(['event' => 'package_phase', 'status' => 'warn', 'reason' => 'queue_failures', 'count' => $packageErrors]);
+}
+
+runStep('Attempting apt fix-broken install (post-package phase)', aptCmd('--fix-broken install -y'));
+pmssAutoremovePackages();
 
 $GLOBALS['PMSS_PACKAGES_READY'] = true;
 putenv('PMSS_PACKAGE_PHASE=complete');
 pmssLogJson(['event' => 'package_phase', 'status' => 'ok']);
 
-// Only after package installation has stabilised do we update legacy soft.sh.
-pmssEnsureLatestUpdater();
 pmssMigrateLegacyLocalnet();
 pmssApplyRuntimeTemplates();
 pmssApplyHostnameConfig('logmsg');

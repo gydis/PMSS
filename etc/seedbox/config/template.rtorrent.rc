@@ -1,0 +1,57 @@
+#DHT and PEX configuration - If you use private trackers the torrents have private flag, so you can safely leave these enabled in most cases
+dht.mode.set = auto
+schedule2 = dht_node1, 1, 3600, "dht.add_node=dht.libtorrent.org:25401"
+schedule2 = dht_node2, 15, 3600, "dht.add_node=dht.transmissionbt.com"
+schedule2 = dht_node3, 45, 3600, "dht.add_node=router.utorrent.com"
+schedule2 = watch_directory,15,1,"load.start_verbose=~/watch/*.torrent"
+#schedule2 = untied_directory,10,10,stop_untied=
+schedule2 = rss,0,1800,"execute={sh,-c,php ~/www/rutorrent/plugins/rss/update.php& exit 0}"
+#schedule2 = last_scrape_s, 0, 1800, "d.multicall2=main,d.tracker.send_scrape=0"
+schedule2 = scgi_permission,0,0,"execute.nothrow=chmod,770,~/.rtorrent.socket"
+
+protocol.pex.set = yes
+#disable UDP on custom config if you do not want them -- UDP trackers are likely to cause issues
+trackers.use_udp.set = yes
+
+try_import = .rtorrent.rc.custom
+
+## Following user should not change in any case - basic config & performance options etc.
+
+pieces.memory.max.set = ##memoryMax
+pieces.preload.type.set = 0
+pieces.hash.on_completion.set = no
+
+directory.default.set = ~/data
+session.path.set = ~/session
+
+system.file.max_size.set = 5000G
+system.file.allocate = 1
+
+network.scgi.open_local = ~/.rtorrent.socket
+network.send_buffer.size.set = 8M
+network.receive_buffer.size.set = 8M
+network.max_open_sockets.set = 2000
+network.http.max_open.set = 16
+network.max_open_files.set = 5000
+network.http.dns_cache_timeout.set = 6
+network.xmlrpc.size_limit.set = 4M
+network.port_range.set = 20000-60000
+network.port_random.set = yes
+
+#trackers.use_udp.set = yes
+#trackers.numwant.set = ##maximumPeers
+trackers.numwant.set = ##minimumPeers
+
+# Increasing these values does not normally increase speed but can negatively impact the server -- please be careful
+throttle.min_peers.normal.set = ##minimumPeers
+throttle.max_peers.normal.set = ##maximumPeers
+throttle.min_peers.seed.set = ##minimumPeers
+throttle.max_peers.seed.set = ##maximumPeers
+throttle.max_uploads.global.set = ##uploadSlots
+
+
+
+protocol.encryption.set = allow_incoming,try_outgoing,enable_retry
+encoding.add = utf8
+method.insert = system.startup_time, value|const, (system.time)
+
