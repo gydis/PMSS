@@ -50,6 +50,7 @@
 - **Safe Execution Proof**: When possible, exercise non-destructive entry points such as `--help`, `--dry-run`, or environment-detection routines and note the observed output. If the change affects destructive steps, document reasoning or out-of-band validation that supports the update.
 - **Manual Traceability**: Record the commands or scenarios reviewed (including dry runs or log captures) so reviewers can follow the verification story.
 - **Coverage Expectations**: When adding features or models, ship matching unit tests—target at least five distinct cases per function (ideally ten, including unusual or boundary scenarios).
+- **Testing Philosophy**: Every change should include dev-time tests (self-contained, no network/system modifications) plus an intent to cover production validation (post-deploy probes that confirm services/packages exist). Start by keeping dev tests hermetic; add production probes once the harness exists.
 
 ## Dependency Policy
 - **Default Stance**: Avoid adding new system packages, Composer dependencies, or external binaries unless there is a clear, reviewable justification.

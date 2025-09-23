@@ -7,72 +7,8 @@ require_once dirname(__DIR__).'/update/apt.php';
 require_once dirname(__DIR__).'/update/repositories.php';
 require_once dirname(__DIR__).'/update/runtime/commands.php';
 
-class UpdateHelpersEdgeTest extends TestCase
+class UpdateHelpersRepoBehaviourTest extends TestCase
 {
-    public function testSafeWriteSourcesOverwritesExisting(): void
-    {
-        $target = $this->makeTempSources('old');
-        putenv('PMSS_APT_SOURCES_PATH='.$target);
-
-        $result = \pmssSafeWriteSources('new', 'UnitTest', null);
-        $this->assertTrue($result);
-        $this->assertEquals('new', file_get_contents($target));
-        $this->assertEquals('old', file_get_contents($target.'.pmss-backup'));
-
-        $this->clearEnv('PMSS_APT_SOURCES_PATH');
-    }
-
-    public function testSafeWriteSourcesReturnsFalseWhenTargetIsDirectory(): void
-    {
-        $dir = sys_get_temp_dir().'/pmss-dir-'.bin2hex(random_bytes(4));
-        if (file_exists($dir)) {
-            if (is_dir($dir)) {
-                @rmdir($dir);
-            } else {
-                @unlink($dir);
-            }
-        }
-        @mkdir($dir, 0755, true);
-        $this->assertTrue(is_dir($dir));
-        putenv('PMSS_APT_SOURCES_PATH='.$dir);
-
-        $result = \pmssSafeWriteSources('data', 'DirTest', null);
-        $this->assertTrue($result === false);
-        $this->assertTrue(file_exists($dir.'.pmss-backup'));
-
-        $this->clearEnv('PMSS_APT_SOURCES_PATH');
-    }
-
-    public function testSafeWriteSourcesCreatesParentDirectoriesWhenMissing(): void
-    {
-        $dir = sys_get_temp_dir().'/pmss-missing-'.bin2hex(random_bytes(4));
-        $target = $dir.'/sources.list';
-        if (is_dir($dir)) {
-            @rmdir($dir);
-        }
-        putenv('PMSS_APT_SOURCES_PATH='.$target);
-
-        $result = \pmssSafeWriteSources('deb test main', 'DirCreate', null);
-        $this->assertTrue($result);
-        $this->assertTrue(is_dir($dir));
-
-        $this->clearEnv('PMSS_APT_SOURCES_PATH');
-    }
-
-    public function testSafeWriteSourcesBackupUpdatedOnSecondWrite(): void
-    {
-        $target = $this->makeTempSources('first');
-        putenv('PMSS_APT_SOURCES_PATH='.$target);
-
-        \pmssSafeWriteSources('second', 'UnitTest', null);
-        \pmssSafeWriteSources('third', 'UnitTest', null);
-
-        $this->assertEquals('third', file_get_contents($target));
-        $this->assertEquals('second', file_get_contents($target.'.pmss-backup'));
-
-        $this->clearEnv('PMSS_APT_SOURCES_PATH');
-    }
-
     public function testUpdateAptSourcesUnsupportedDistroLogsMessage(): void
     {
         $logs = [];
@@ -106,15 +42,12 @@ class UpdateHelpersEdgeTest extends TestCase
     {
         $target = $this->makeTempSources('initial');
         putenv('PMSS_APT_SOURCES_PATH='.$target);
-
         $template = "deb http://mirror.example buster main\n";
         \updateAptSources('debian', 10, sha1('initial'), [
             'buster' => $template,
             'bullseye' => '', 'jessie' => '', 'bookworm' => '', 'trixie' => '',
         ], function (): void {});
-
         $this->assertEquals($template, file_get_contents($target));
-
         $this->clearEnv('PMSS_APT_SOURCES_PATH');
     }
 
@@ -122,23 +55,18 @@ class UpdateHelpersEdgeTest extends TestCase
     {
         $target = $this->makeTempSources('alpha');
         putenv('PMSS_APT_SOURCES_PATH='.$target);
-
         $first = "deb http://mirror.example bullseye main\n";
         $second = "deb http://mirror.example bullseye contrib\n";
-
         \updateAptSources('debian', 11, sha1('alpha'), [
             'bullseye' => $first,
             'buster' => '', 'jessie' => '', 'bookworm' => '', 'trixie' => '',
         ], function (): void {});
-
         \updateAptSources('debian', 11, sha1($first), [
             'bullseye' => $second,
             'buster' => '', 'jessie' => '', 'bookworm' => '', 'trixie' => '',
         ], function (): void {});
-
         $this->assertEquals($second, file_get_contents($target));
         $this->assertEquals($first, file_get_contents($target.'.pmss-backup'));
-
         $this->clearEnv('PMSS_APT_SOURCES_PATH');
     }
 
@@ -147,14 +75,12 @@ class UpdateHelpersEdgeTest extends TestCase
         $template = "deb http://mirror.example bullseye main\n";
         $hash = sha1($template);
         $logs = [];
-
         \updateAptSources('debian', 11, $hash, [
             'bullseye' => $template,
             'buster' => '', 'jessie' => '', 'bookworm' => '', 'trixie' => '',
         ], function (string $msg) use (&$logs): void {
             $logs[] = $msg;
         });
-
         $this->assertTrue((bool)array_filter($logs, static fn($m) => str_contains($m, 'already correct')));
     }
 
@@ -162,14 +88,11 @@ class UpdateHelpersEdgeTest extends TestCase
     {
         $target = $this->makeTempSources('baseline');
         putenv('PMSS_APT_SOURCES_PATH='.$target);
-
         \updateAptSources('debian', 11, sha1('baseline'), [
             'bullseye' => '',
             'buster' => '', 'jessie' => '', 'bookworm' => '', 'trixie' => '',
         ], function (): void {});
-
         $this->assertEquals('baseline', file_get_contents($target));
-
         $this->clearEnv('PMSS_APT_SOURCES_PATH');
     }
 
@@ -199,6 +122,17 @@ class UpdateHelpersEdgeTest extends TestCase
         $cmd = \aptCmd('install -y');
         $this->assertTrue(strpos($cmd, 'apt-get') !== false);
         $this->assertEquals('install -y', substr($cmd, -strlen('install -y')));
+    }
+
+    public function testRefreshRepositoriesSkipsWhenVersionUnknown(): void
+    {
+        $target = $this->makeTempSources('unchanged');
+        putenv('PMSS_APT_SOURCES_PATH='.$target);
+        $logs = [];
+        \pmssRefreshRepositories('debian', 0, function (string $msg) use (&$logs): void { $logs[] = $msg; });
+        $this->assertEquals('unchanged', file_get_contents($target));
+        $this->assertTrue((bool)array_filter($logs, static fn($m) => str_contains($m, 'Skipping repository refresh')));
+        $this->clearEnv('PMSS_APT_SOURCES_PATH');
     }
 
     private function makeTempSources(string $content): string

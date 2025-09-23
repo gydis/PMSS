@@ -83,6 +83,11 @@ function pmssUpdateAptSources(string $distroName, int $distroVersion, string $cu
 {
     $log = pmssSelectLogger($logger);
 
+    if ($distroVersion <= 0) {
+        $log(sprintf('Skipping repository update for %s: unknown version', $distroName));
+        return;
+    }
+
     switch ($distroName) {
         case 'debian':
             pmssUpdateAptSourcesDebian($distroVersion, $currentHash, $repos, $log);

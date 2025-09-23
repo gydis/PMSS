@@ -34,6 +34,18 @@ $distribution  = pmssDetectDistro();
 $distroName    = $distribution['name'];
 $distroVersion = $distribution['version'];
 $lsbCodename   = $distribution['codename'];
+$reportedVersion = (int) $distroVersion;
+$repoVersion     = pmssVersionFromCodename($lsbCodename);
+$repoLogMessage  = '';
+if ($repoVersion === 0 && $reportedVersion > 0) {
+    $repoVersion    = $reportedVersion;
+    $repoLogMessage = sprintf('Repository codename %s unresolved; falling back to VERSION_ID %d', $lsbCodename !== '' ? $lsbCodename : 'unknown', $repoVersion);
+} elseif ($repoVersion === 0 && $reportedVersion === 0) {
+    $repoLogMessage = sprintf('Repository detection failed for distro=%s codename=%s; skipping repository updates', $distroName, $lsbCodename !== '' ? $lsbCodename : 'unknown');
+}
+if ($repoVersion !== 0 && $reportedVersion !== 0 && $repoVersion !== $reportedVersion) {
+    $repoLogMessage = sprintf('Repository version mapped via codename %s -> %d (reported=%s)', $lsbCodename !== '' ? $lsbCodename : 'unknown', $repoVersion, $distroVersion);
+}
 
 putenv('DEBIAN_FRONTEND=noninteractive');
 putenv('APT_LISTCHANGES_FRONTEND=none');
@@ -62,7 +74,13 @@ if (!function_exists('logmsg')) {
 
 pmssConfigureAptNonInteractive('logmsg');
 pmssCompletePendingDpkg();
-pmssApplyDpkgSelections((int)$distroVersion);
+$dpkgTargetVersion = $repoVersion > 0 ? $repoVersion : $reportedVersion;
+if ($dpkgTargetVersion > 0) {
+    pmssApplyDpkgSelections($dpkgTargetVersion);
+}
+if ($repoLogMessage !== '') {
+    logmsg($repoLogMessage);
+}
 
 require_once __DIR__.'/../lib/update/users.php';
 
@@ -73,22 +91,20 @@ pmssLogJson(['event' => 'phase', 'name' => 'update-step2', 'status' => 'start'])
 // Ensure legacy soft.sh flow self-updates before we continue.
 pmssEnsureLatestUpdater();
 
+// Refresh repositories and queue packages up front so later tasks see required binaries.
+pmssRefreshRepositories($distroName, $repoVersion, 'logmsg');
+pmssAutoremovePackages();
+include_once '/scripts/lib/update/apps/packages.php';
+pmssFlushPackageQueue();
+pmssAutoremovePackages();
+pmssMigrateLegacyLocalnet();
+pmssApplyRuntimeTemplates();
+
 // --- Basic system preparation ---
 pmssEnsureCgroupsConfigured('logmsg');
 pmssEnsureSystemdSlices('logmsg');
 pmssResetCorePermissions();
 pmssEnsureLocaleBaseline();
-
-// Repository management and APT maintenance.
-pmssRefreshRepositories($distroName, $distroVersion, 'logmsg');
-pmssMigrateLegacyLocalnet();
-pmssApplyRuntimeTemplates();
-
-// Install APT packages and related tooling.
-pmssAutoremovePackages();
-include_once '/scripts/lib/update/apps/packages.php';
-pmssFlushPackageQueue();
-pmssAutoremovePackages();
 
 // Web stack hardening and per-user HTTP refresh.
 pmssConfigureWebStack($distroVersion);
