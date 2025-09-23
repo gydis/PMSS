@@ -45,5 +45,12 @@ human-readable JSON structure for audits.
 are captured from production. Do **not** edit them without approval. The
 Bookworm snapshot is derived from the Bullseye list and should be validated in
 testing before production rollout.
+- Be cautious with `install.sh`; it has been in service for over a decade and should only be modified when absolutely necessary.
+- `install.sh` is purely a bootstrap into `update.php`—keep it minimal:
+  1. Ensure core tooling is present (`bash`, `php` CLI, `git`, `curl`, `wget`,
+     `ca-certificates`, `rsync`).
+  2. Fetch or clone the repository so `/scripts`, `/etc`, and `/var` are staged
+     locally.
+  3. Invoke `update.php` with any positional arguments supplied by the operator.
 - To refresh a snapshot: run `dpkg --get-selections > selections-debianXX.txt`
   on a live host, then remove any `deinstall` entries before committing.

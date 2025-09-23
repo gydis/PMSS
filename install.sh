@@ -1,22 +1,17 @@
 #!/bin/bash
-#Pulsed Media Seedbox Management Software package AKA Pulsed Media Software Stack "PMSS"
+# PMSS bootstrap installer.
 #
-# LICENSE
-# This work is licensed under the Creative Commons Attribution-ShareAlike 3.0 Unported License.
-# To view a copy of this license, visit http://creativecommons.org/licenses/by-sa/3.0/ or send a letter to Creative Commons, 171 Second Street, Suite 300, San Francisco, California, 94105, USA.
-
-# Copyright 2010-2024 Magna Capax Finland Oy
+# - Installs minimal prerequisites on a fresh Debian host.
+# - Downloads or clones the requested PMSS snapshot and hands off to
+#   update.php with any additional arguments provided.
+# - Performs initial hostname/quota prompts to keep the legacy workflow intact.
 #
-# USE AT YOUR OWN RISK! ABSOLUTELY NO GUARANTEES GIVEN!
-# Pulsed Media does not take any responsibility over usage of this package, and will not be responsible for any damages, injuries, losses, or anything else for that matter due to the
-# usage of this package.
+# This script has been the entry point for well over a decade—treat it gently.
+# Only adjust behaviour when absolutely necessary, and coordinate changes with
+# the platform team.
 #
-# Please note: Install this on a fresh, minimal install Debian 64bit.
-#
-# For help, see http://wiki.pulsedmedia.com
-# Github: https://github.com/MagnaCapax/PMSS
-
-# Usage for special branch: bash ./install.sh "git/http://github.com/MagnaCapax/PMSS:update2-distro-support:2023-07-22"
+# Author: Aleksi Ursin <aleksi@magnacapax.fi>
+# Copyright 2010-2025 Magna Capax Finland Oy
 
 DEFAULT_REPOSITORY="https://github.com/MagnaCapax/PMSS"
 date=
@@ -24,6 +19,26 @@ type=
 url=
 repository=
 branch=
+
+# Simple colour-aware logging helpers.
+if [ -t 1 ]; then
+    COLOR_BLUE="$(tput setaf 4)"
+    COLOR_GREEN="$(tput setaf 2)"
+    COLOR_YELLOW="$(tput setaf 3)"
+    COLOR_RED="$(tput setaf 1)"
+    COLOR_RESET="$(tput sgr0)"
+else
+    COLOR_BLUE=""
+    COLOR_GREEN=""
+    COLOR_YELLOW=""
+    COLOR_RED=""
+    COLOR_RESET=""
+fi
+
+log_step() { echo -e "${COLOR_BLUE}==>${COLOR_RESET} $*"; }
+log_info() { echo -e "${COLOR_GREEN}-->${COLOR_RESET} $*"; }
+log_warn() { echo -e "${COLOR_YELLOW}WARN${COLOR_RESET} $*"; }
+log_error() { echo -e "${COLOR_RED}ERR ${COLOR_RESET} $*"; }
 
 # Installer runtime flags, populated from CLI switches.
 hostname_override=
@@ -71,15 +86,15 @@ while [[ $# -gt 0 ]]; do
 		continue
 		;;
 	--help)
-		echo "Usage: bash install.sh [update-source] [options...]"
-		echo "  --hostname=<name>      set system hostname non-interactively"
-		echo "  --skip-hostname        skip hostname confirmation"
-		echo "  --quota-mount=<path>   add quota options to specified fstab mount"
-		echo "  --skip-quota           skip quota guidance section"
+		log_info "Usage: bash install.sh [update-source] [options...]"
+		log_info "  --hostname=<name>      set system hostname non-interactively"
+		log_info "  --skip-hostname        skip hostname confirmation"
+		log_info "  --quota-mount=<path>   add quota options to specified fstab mount"
+		log_info "  --skip-quota           skip quota guidance section"
 		exit 0
 		;;
 	--*)
-		echo "Unknown option: $1"
+		log_error "Unknown option: $1"
 		exit 1
 		;;
 	*)
@@ -91,7 +106,17 @@ done
 
 set -- "${POSITIONAL[@]}"
 
-SOURCE_SPEC="$1"
+if [ $# -gt 0 ]; then
+    SOURCE_SPEC="$1"
+    shift
+else
+    SOURCE_SPEC=""
+fi
+if [ -n "$SOURCE_SPEC" ]; then
+    UPDATE_ARGS=("$SOURCE_SPEC" "$@")
+else
+    UPDATE_ARGS=("$@")
+fi
 
 parse_version_string() {
 	local input_string="$1"
@@ -100,27 +125,27 @@ parse_version_string() {
 		type="${BASH_REMATCH[1]}"
 		url="${BASH_REMATCH[2]}"
 		date="${BASH_REMATCH[3]}"
-		echo "Type: $type"
-		echo "URL: $url"
-		echo "Date: $date"
+		log_info "Spec type: $type"
+		log_info "Spec URL: $url"
+		log_info "Spec date: $date"
 		if [[ $url =~ (.*[^:])[:](.*[^:])[:]?$ ]]; then
 			repository="${BASH_REMATCH[1]}"
 			branch="${BASH_REMATCH[2]}"
-			echo "Repository: $repository"
-			echo "Branch: $branch"
+			log_info "Repository: $repository"
+			log_info "Branch: $branch"
 
 		elif [[ $url =~ (^main)[:]$ ]]; then
 			repository=$DEFAULT_REPOSITORY
 			branch="${BASH_REMATCH[1]}"
-			echo "Repository: $repository"
-			echo "Branch: $branch"
+			log_info "Repository: $repository"
+			log_info "Branch: $branch"
 		else
-			echo "Url doesn't match, using defaults"
+			log_warn "Spec URL didn't match expected format, using defaults"
 			repository=$DEFAULT_REPOSITORY
 			branch="main"
 		fi
 	else
-		echo "Invalid input format."
+		log_warn "Invalid version spec, using defaults"
 	fi
 }
 
@@ -136,7 +161,7 @@ ensure_packages() {
 		if apt-cache show "$pkg" >/dev/null 2>&1; then
 			missing+=("$pkg")
 		else
-			echo "## Package $pkg not found in repositories, skipping"
+	log_warn "Package $pkg not found in repositories, skipping"
 		fi
 	done
 
@@ -144,7 +169,7 @@ ensure_packages() {
 		return
 	fi
 
-	echo "## Installing missing packages: ${missing[*]}"
+log_step "Installing missing packages: ${missing[*]}"
 	local chunk=()
 	local len=0
 	local max_len=30000
@@ -164,10 +189,10 @@ ensure_packages() {
 }
 
 export DEBIAN_FRONTEND=noninteractive
-echo "## Updating package lists"
+log_step "Updating package lists"
 apt update
 # Perform the full-upgrade
-echo "## Running full-upgrade"
+log_step "Running apt full-upgrade"
 apt-get full-upgrade -yqq
 
 # First Let's verify hostname
@@ -182,24 +207,24 @@ update_hostname() {
 
 	if hostnamectl >/dev/null 2>&1; then
 		hostnamectl set-hostname "$new_host" >/dev/null 2>&1 &&
-			echo "## Hostname set via hostnamectl"
+			log_info "Hostname set via hostnamectl"
 	fi
 	echo "$new_host" >/etc/hostname
-	echo "## /etc/hostname updated"
+	log_info "/etc/hostname updated"
 }
 
 if [[ -n "$hostname_override" ]]; then
 	update_hostname "$hostname_override"
 elif [[ "$skip_hostname_edit" == true ]]; then
-	echo "## Skipping hostname confirmation as requested"
+	log_info "Skipping hostname confirmation"
 else
-	echo "## Review hostname (press Ctrl+X to exit nano)"
+	log_step "Review hostname (press Ctrl+X to exit nano)"
 	nano /etc/hostname
 fi
 
 # Setup fstab for quota and /home array
-echo "#### Setting up quota"
-echo "You need to add ' usrjquota=aquota.user,grpjquota=aquota.group,jqfmt=vfsv1 ' to the device for which you want quota"
+log_step "Rechecking kernel quota support (legacy helper)"
+log_warn "Remember to add usrjquota/grpjquota options to the quota mount (manual step)"
 echo "
 proc            /proc           proc    defaults,hidepid=2        0       0
 
@@ -255,22 +280,22 @@ ensure_quota_options() {
 		local rc=$?
 		rm -f "$tmpfile"
 		if [[ $rc -eq 2 ]]; then
-			echo "## Quota mount $mount_point not found in /etc/fstab"
+			log_warn "Quota mount $mount_point not found in /etc/fstab"
 			return 2
 		fi
-		echo "## Failed to adjust /etc/fstab for $mount_point"
+		log_warn "Failed to adjust /etc/fstab for $mount_point"
 		return $rc
 	fi
 
 	if mv "$tmpfile" /etc/fstab; then
 		if grep -Eq "^[[:space:]]*[^#]+[[:space:]]+$mount_point[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]*${opts}" /etc/fstab; then
-			echo "## Quota options confirmed for $mount_point"
+			log_info "Quota options confirmed for $mount_point"
 		else
-			echo "## Unable to confirm quota options for $mount_point"
+			log_warn "Unable to confirm quota options for $mount_point"
 		fi
 	else
 		rm -f "$tmpfile"
-		echo "## Failed to move updated /etc/fstab back"
+		log_warn "Failed to move updated /etc/fstab back"
 		return 1
 	fi
 }
@@ -278,9 +303,9 @@ ensure_quota_options() {
 if [[ -n "$quota_mountpoint" ]]; then
 	ensure_quota_options "$quota_mountpoint" "$quota_options" || true
 elif [[ "$skip_quota_edit" == true ]]; then
-	echo "## Skipping quota configuration as requested"
+	log_info "Skipping quota configuration as requested"
 else
-	echo "## Review /etc/fstab quota options (Ctrl+X to exit nano)"
+	log_step "Review /etc/fstab quota options (Ctrl+X to exit nano)"
 	nano /etc/fstab
 fi
 
@@ -322,7 +347,7 @@ ensure_packages iptables curl libssl-dev python3-pip cgroup-tools libtool
 touch /usr/share/pyload ## XXX: This is a hack to disable pyload-cli install
 
 # Script installs from release by default and uses a specific git branch as the source if given string of "git/branch" format
-echo "### Setting up software"
+log_step "Setting up base software"
 mkdir ~/compile
 cd /tmp || exit
 rm -rf PMSS*
@@ -352,7 +377,7 @@ mkdir -p /etc/seedbox/config/
 echo "$SOURCE $VERSION" >/etc/seedbox/config/version
 
 #TODO Transfer over the proper rc.local + sysctl configs
-echo "### Setting up HDD schedulers"
+log_step "Deploying legacy BFQ/sysctl tuning (ensure rc.local unchanged)"
 echo "
 #Pulsed Media Config
 block/sda/queue/scheduler = bfq
@@ -373,15 +398,15 @@ net.ipv4.ip_forward = 1
 " >>/etc/sysctl.d/1-pmss-defaults.conf
 
 #TODO Transfer over the proper root .bashrc
-echo "### Setting up basic shell env"
+log_step "Configuring root shell defaults"
 echo "alias ls='ls --color=auto'" >>/root/.bashrc
 echo "PATH=\$PATH:/scripts" >>/root/.bashrc
 
-echo "### setting /home permissions"
+log_step "Adjusting /home permissions"
 chmod o-rw /home
 
-echo "### Daemon configurations, quota checkup"
-/scripts/update.php "$1"
+log_step "Finalising daemon configuration"
+/scripts/update.php "${UPDATE_ARGS[@]}"
 /scripts/util/setupRootCron.php
 /scripts/util/setupSkelPermissions.php
 /scripts/util/quotaFix.php
