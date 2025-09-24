@@ -23,7 +23,14 @@ function pmssAptSourcesPath(): string
 function pmssLoadRepoTemplate(string $codename, ?callable $logger = null): string
 {
     $log = pmssSelectLogger($logger);
-    $path = "/etc/seedbox/config/template.sources.$codename";
+    $base = getenv('PMSS_CONFIG_DIR');
+    // Allow tests and recovery scripts to point at alternate config roots.
+    if (is_string($base) && $base !== '') {
+        $configRoot = rtrim($base, '/');
+    } else {
+        $configRoot = '/etc/seedbox/config';
+    }
+    $path = $configRoot."/template.sources.$codename";
 
     if (!file_exists($path)) {
         $log("Repository template missing: $path");

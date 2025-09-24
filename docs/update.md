@@ -106,6 +106,7 @@ Dry-run a release update to inspect logging only:
 
 - Always run `php -l scripts/update.php` and
   `php scripts/lib/tests/development/Runner.php` after touching update logic.
+- Aim for comprehensive testing: add new unit/integration coverage when you modify services, and run smoke tests (`/scripts/update.php --dry-run`) before shipping.
 - Check `/var/log/pmss-update.jsonl` for a structured summary of the last run;
   a missing `update_step2_end` event typically means phase 2 was skipped.
 - When developing helpers under `scripts/lib/update`, mirror the existing

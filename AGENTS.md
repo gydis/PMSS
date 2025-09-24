@@ -31,6 +31,7 @@
 - **Low Coupling, High Cohesion**: Keep related logic together while minimizing cross-module knowledge and dependencies.
 - **Explicit Boundaries**: Isolate core logic from I/O, UI, frameworks, storage, and transports—layer the code so each concern stays independent.
 - **Never Break Old Users**: Any change must preserve existing users’ workflows and data; upgrades should be safe, reversible, and backward compatible.
+- **Contracts & Invariants**: Document pre/post-conditions for every module (e.g., package phase leaves nginx running) and defend them with assertions or tests.
 - **MVC Layering Mindset**: Organize logic so that data access, business rules, and presentation/output responsibilities remain clearly separated. Apply this separation consistently—from method structure to overall file organization—to keep behaviour testable and make it easy to add more automated coverage.
 - **Fail-Soft Bias**: Favor recovering and continuing whenever safe instead of terminating execution. Only halt when the outcome would be catastrophic or data-damaging, and document the reason when an exit becomes unavoidable.
 - **Failure Imagination**: Before landing a change, brainstorm how the code might misbehave—even via unlikely, chaotic inputs or operator mistakes—and add guards so those scenarios are prevented or handled harmlessly instead of breaking production.

@@ -529,6 +529,7 @@ function runUpdateStep2(bool $dryRun): void
         return;
     }
 
+    // #TODO Add a preflight probe (disk, network, apt reachability) before invoking phase 2.
     logmsg('Handing off to update-step2.php');
     logEvent('update_step2_start');
     $start = microtime(true);
