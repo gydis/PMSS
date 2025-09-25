@@ -108,8 +108,8 @@ fonts-freefont-ttf				install
 fonts-glyphicons-halflings			install
 fonts-lato					install
 fonts-liberation				install
-fuse						install
-fuse3						deinstall
+fuse						deinstall
+fuse3						install
 g++						install
 g++-10						install
 gawk						install

@@ -49,7 +49,7 @@ function pmssInstallMediaAndNetworkTools(int $distroVersion): void
     pmssQueuePackages(['net-tools', 'nicstat']);
     pmssQueuePackages(['restic', 'borgbackup', 'borgmatic', 'borgbackup-doc', 'backupninja']);
 
-    pmssQueuePackages(['links', 'elinks', 'lynx', 'ethtool', 'zip', 'p7zip-full', 'smartmontools', 'flac', 'lame', 'lame-doc', 'mp3diags', 'gcc', 'g++', 'gettext', 'fuse', 'glib-networking', 'libglib2.0-dev', 'libfuse-dev', 'apt-transport-https', 'pigz']);
+    pmssQueuePackages(['links', 'elinks', 'lynx', 'ethtool', 'zip', 'p7zip-full', 'smartmontools', 'flac', 'lame', 'lame-doc', 'mp3diags', 'gcc', 'g++', 'gettext', 'fuse3', 'glib-networking', 'libglib2.0-dev', 'libfuse-dev', 'apt-transport-https', 'pigz']);
     pmssQueuePackages(['python3-cheetah']);
 
     // #TODO revisit curl/libcurl upgrades once a consistent backports policy is defined.

@@ -111,7 +111,8 @@ fonts-freefont-ttf
 fonts-glyphicons-halflings
 fonts-lato
 fonts-liberation
-fuse
+fuse	deinstall
+fuse3	install
 g++
 g++-10
 gawk
