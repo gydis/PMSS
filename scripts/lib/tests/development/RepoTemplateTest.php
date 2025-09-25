@@ -24,9 +24,10 @@ class RepoTemplateTest extends TestCase
     public function testRefreshRepositoriesSkipsWhenVersionUnknown(): void
     {
         $logs = [];
-        pmssRefreshRepositories('debian', 0, function (string $msg) use (&$logs): void {
+        $plan = pmssRepositoryUpdatePlan('debian', 0, function (string $msg) use (&$logs): void {
             $logs[] = $msg;
         });
-        $this->assertTrue((bool)array_filter($logs, static fn($m) => str_contains($m, 'Skipping repository refresh')));
+        $this->assertEquals('reuse', $plan['mode']);
+        $this->assertTrue((bool)array_filter($logs, static fn($m) => str_contains($m, 'reusing existing sources')));
     }
 }

@@ -69,4 +69,4 @@
 # And do not ignore gitkeep files to keep empty directories
 !.gitkeep
 
-!/agents.md
+agents.local.md

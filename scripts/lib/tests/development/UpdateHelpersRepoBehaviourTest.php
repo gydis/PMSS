@@ -40,34 +40,32 @@ class UpdateHelpersRepoBehaviourTest extends TestCase
 
     public function testUpdateAptSourcesBusterWritesTemplate(): void
     {
-        $target = $this->makeTempSources('initial');
-        putenv('PMSS_APT_SOURCES_PATH='.$target);
         $template = "deb http://mirror.example buster main\n";
-        \updateAptSources('debian', 10, sha1('initial'), [
-            'buster' => $template,
-            'bullseye' => '', 'jessie' => '', 'bookworm' => '', 'trixie' => '',
-        ], function (): void {});
-        $this->assertEquals($template, file_get_contents($target));
-        $this->clearEnv('PMSS_APT_SOURCES_PATH');
+        $this->withTempSources('initial', function (string $target) use ($template): void {
+            \updateAptSources('debian', 10, sha1('initial'), [
+                'buster' => $template,
+                'bullseye' => '', 'jessie' => '', 'bookworm' => '', 'trixie' => '',
+            ], function (): void {});
+            $this->assertEquals($template, file_get_contents($target));
+        });
     }
 
     public function testUpdateAptSourcesCreatesBackupOnRewrite(): void
     {
-        $target = $this->makeTempSources('alpha');
-        putenv('PMSS_APT_SOURCES_PATH='.$target);
-        $first = "deb http://mirror.example bullseye main\n";
-        $second = "deb http://mirror.example bullseye contrib\n";
-        \updateAptSources('debian', 11, sha1('alpha'), [
-            'bullseye' => $first,
-            'buster' => '', 'jessie' => '', 'bookworm' => '', 'trixie' => '',
-        ], function (): void {});
-        \updateAptSources('debian', 11, sha1($first), [
-            'bullseye' => $second,
-            'buster' => '', 'jessie' => '', 'bookworm' => '', 'trixie' => '',
-        ], function (): void {});
-        $this->assertEquals($second, file_get_contents($target));
-        $this->assertEquals($first, file_get_contents($target.'.pmss-backup'));
-        $this->clearEnv('PMSS_APT_SOURCES_PATH');
+        $this->withTempSources('alpha', function (string $target): void {
+            $first = "deb http://mirror.example bullseye main\n";
+            $second = "deb http://mirror.example bullseye contrib\n";
+            \updateAptSources('debian', 11, sha1('alpha'), [
+                'bullseye' => $first,
+                'buster' => '', 'jessie' => '', 'bookworm' => '', 'trixie' => '',
+            ], function (): void {});
+            \updateAptSources('debian', 11, sha1($first), [
+                'bullseye' => $second,
+                'buster' => '', 'jessie' => '', 'bookworm' => '', 'trixie' => '',
+            ], function (): void {});
+            $this->assertEquals($second, file_get_contents($target));
+            $this->assertEquals($first, file_get_contents($target.'.pmss-backup'));
+        });
     }
 
     public function testUpdateAptSourcesSkipsRewriteWhenHashesMatch(): void
@@ -86,14 +84,13 @@ class UpdateHelpersRepoBehaviourTest extends TestCase
 
     public function testUpdateAptSourcesEmptyRepositoriesSkipsWrites(): void
     {
-        $target = $this->makeTempSources('baseline');
-        putenv('PMSS_APT_SOURCES_PATH='.$target);
-        \updateAptSources('debian', 11, sha1('baseline'), [
-            'bullseye' => '',
-            'buster' => '', 'jessie' => '', 'bookworm' => '', 'trixie' => '',
-        ], function (): void {});
-        $this->assertEquals('baseline', file_get_contents($target));
-        $this->clearEnv('PMSS_APT_SOURCES_PATH');
+        $this->withTempSources('baseline', function (string $target): void {
+            \updateAptSources('debian', 11, sha1('baseline'), [
+                'bullseye' => '',
+                'buster' => '', 'jessie' => '', 'bookworm' => '', 'trixie' => '',
+            ], function (): void {});
+            $this->assertEquals('baseline', file_get_contents($target));
+        });
     }
 
     public function testUpdateAptSourcesLoggerReceivesMultipleEntries(): void
@@ -111,10 +108,40 @@ class UpdateHelpersRepoBehaviourTest extends TestCase
 
     public function testPmssAptSourcesPathOverride(): void
     {
-        $file = $this->makeTempSources('example');
-        putenv('PMSS_APT_SOURCES_PATH='.$file);
-        $this->assertEquals($file, \pmssAptSourcesPath());
-        $this->clearEnv('PMSS_APT_SOURCES_PATH');
+        $this->withTempSources('example', function (string $file): void {
+            $this->assertEquals($file, \pmssAptSourcesPath());
+        });
+    }
+
+    public function testRepositoryUpdatePlanLoadsTemplates(): void
+    {
+        $template = "deb http://mirror.example bullseye main\n";
+        $this->withTempConfigTemplates(['bullseye' => $template], function () use ($template): void {
+            $plan = \pmssRepositoryUpdatePlan('debian', 11, function (): void {});
+            $this->assertEquals('update', $plan['mode']);
+            $this->assertEquals($template, $plan['templates']['bullseye']);
+            $this->assertTrue(array_key_exists('buster', $plan['templates']));
+        });
+    }
+
+    public function testRefreshRepositoriesAppliesTemplateForTrixie(): void
+    {
+        $template = "deb http://mirror.example trixie main\n";
+        $this->withTempConfigTemplates(['trixie' => $template], function () use ($template): void {
+            $this->withTempSources('legacy', function (string $target) use ($template): void {
+                $logs = [];
+                putenv('PMSS_DRY_RUN=1');
+                try {
+                    \pmssRefreshRepositories('debian', 13, function (string $msg) use (&$logs): void {
+                        $logs[] = $msg;
+                    });
+                } finally {
+                    putenv('PMSS_DRY_RUN');
+                }
+                $this->assertEquals($template, file_get_contents($target));
+                $this->assertTrue((bool)array_filter($logs, static fn($m) => str_contains($m, 'Applied Debian Trixie repository config')));
+            });
+        });
     }
 
     public function testAptCmdPrefixesArguments(): void
@@ -126,29 +153,78 @@ class UpdateHelpersRepoBehaviourTest extends TestCase
 
     public function testRefreshRepositoriesSkipsWhenVersionUnknown(): void
     {
-        $target = $this->makeTempSources('unchanged');
-        putenv('PMSS_APT_SOURCES_PATH='.$target);
-        putenv('PMSS_DRY_RUN=1');
         $logs = [];
-        \pmssRefreshRepositories('debian', 0, function (string $msg) use (&$logs): void { $logs[] = $msg; });
-        $this->assertEquals('unchanged', file_get_contents($target));
-        $this->assertTrue((bool)array_filter($logs, static fn($m) => str_contains($m, 'Skipping repository refresh')));
-        $this->clearEnv('PMSS_APT_SOURCES_PATH');
-        putenv('PMSS_DRY_RUN');
+        $this->withTempSources('unchanged', function (string $target) use (&$logs): void {
+            $plan = \pmssRepositoryUpdatePlan('debian', 0, function (string $msg) use (&$logs): void { $logs[] = $msg; });
+            $this->assertEquals('unchanged', file_get_contents($target));
+            $this->assertEquals('reuse', $plan['mode']);
+            $this->assertTrue((bool)array_filter($logs, static fn($m) => str_contains($m, 'reusing existing sources')));
+        });
     }
 
-    private function makeTempSources(string $content): string
+    private function withTempSources(string $content, callable $callback): void
     {
-        $path = tempnam(sys_get_temp_dir(), 'pmss-sources-');
-        if ($path === false) {
-            $path = sys_get_temp_dir().'/pmss-sources-'.bin2hex(random_bytes(6));
+        $dir = sys_get_temp_dir().'/pmss-sources-'.bin2hex(random_bytes(6));
+        if (!@mkdir($dir, 0700, true) && !is_dir($dir)) {
+            throw new \RuntimeException('Unable to create temp directory for test');
         }
-        file_put_contents($path, $content);
-        return $path;
+
+        $path = $dir.'/sources.list';
+        if (file_put_contents($path, $content) === false) {
+            throw new \RuntimeException('Unable to seed temp sources file');
+        }
+        @chmod($path, 0600);
+
+        $previous = getenv('PMSS_APT_SOURCES_PATH');
+        putenv('PMSS_APT_SOURCES_PATH='.$path);
+
+        try {
+            $callback($path);
+        } finally {
+            if ($previous === false) {
+                putenv('PMSS_APT_SOURCES_PATH');
+            } else {
+                putenv('PMSS_APT_SOURCES_PATH='.$previous);
+            }
+            $backup = $path.'.pmss-backup';
+            if (file_exists($backup)) {
+                @unlink($backup);
+            }
+            @unlink($path);
+            @rmdir($dir);
+        }
     }
 
-    private function clearEnv(string $name): void
+    private function withTempConfigTemplates(array $templates, callable $callback): void
     {
-        putenv($name);
+        $dir = sys_get_temp_dir().'/pmss-config-'.bin2hex(random_bytes(6));
+        if (!@mkdir($dir, 0700, true) && !is_dir($dir)) {
+            throw new \RuntimeException('Unable to create temp config directory for test');
+        }
+
+        foreach ($templates as $codename => $content) {
+            $path = $dir."/template.sources.$codename";
+            if (file_put_contents($path, rtrim($content, "\n")."\n") === false) {
+                throw new \RuntimeException('Unable to seed template '.$codename);
+            }
+            @chmod($path, 0600);
+        }
+
+        $previous = getenv('PMSS_CONFIG_DIR');
+        putenv('PMSS_CONFIG_DIR='.$dir);
+
+        try {
+            $callback($dir);
+        } finally {
+            if ($previous === false) {
+                putenv('PMSS_CONFIG_DIR');
+            } else {
+                putenv('PMSS_CONFIG_DIR='.$previous);
+            }
+            foreach ((glob($dir.'/template.sources.*') ?: []) as $file) {
+                @unlink($file);
+            }
+            @rmdir($dir);
+        }
     }
 }
