@@ -32,6 +32,16 @@ Common flags:
 - `--repo`/`--branch` – override the default repository when building a `git/*`
   spec on the fly.
 
+### Phase 1 Quick Reference
+
+| Flag / Mode | Behaviour | Verification Steps |
+| --- | --- | --- |
+| *(default run)* | Stages the selected snapshot and launches phase 2 when the hand-off is not skipped. | Confirm `/var/log/pmss-update.jsonl` contains `update_step2_start` and `update_step2_end`; inspect `/etc/seedbox/config/version` for the expected spec. |
+| `--dry-run` | Parses arguments and logs planned staging actions without touching the filesystem or invoking phase 2. | Check the JSON log for `update_step2_skipped` with reason `dry_run`, then run `git status --short` to ensure no tracked files changed; review `/var/log/pmss-update.log` to confirm intended operations. |
+| `--scripts-only` | Updates `/scripts` and `/etc/skel` from the snapshot, records the version, and skips `update-step2.php`. | Verify `/var/log/pmss-update.jsonl` shows `update_step2_skipped` with reason `scripts_only`; optionally run `/scripts/util/systemTest.php` to confirm services remain healthy. |
+| `--dist-upgrade` | Runs `scripts/util/update-dist-upgrade.php` in place of phase 2, leaving staged files alone. | Check the JSON log for `dist_upgrade_start`/`dist_upgrade_end` entries; review `apt` output in `/var/log/pmss-update.log` and rerun `/scripts/update.php` without the flag to complete orchestration. |
+| `--repo` / `--branch` | Overrides the repository or branch when resolving a `git/*` spec before staging. | Confirm the resolved spec under `/etc/seedbox/config/version.meta`; optionally run `/scripts/update.php --dry-run` with the same flags to validate fetch and staging. |
+
 Version specs normalise user input so `main`, `git main`, and `git/main` produce
 identical results. If no spec is supplied the previously recorded one is reused,
 falling back to `git/main`.
@@ -63,11 +73,51 @@ Environment hints captured by `install.sh` are passed via `PMSS_HOSTNAME`,
 `PMSS_SKIP_HOSTNAME`, `PMSS_QUOTA_MOUNT`, and `PMSS_SKIP_QUOTA`; phase 2 honors
 those flags when reapplying legacy hostname/quota defaults.
 
-Execution outline:
+### Package Phase Ordering
+
+The package phase is a hard invariant: update-step2 must complete every dpkg task
+before any other orchestrator steps run. The sequence is:
+
+1. `pmssConfigureAptNonInteractive()` – force unattended apt behaviour.
+2. `pmssCompletePendingDpkg()` – finish any interrupted `dpkg --configure` runs.
+3. `pmssApplyDpkgSelections()` – apply the codename-specific baseline snapshot.
+4. `pmssFlushPackageQueue()` (once the queue is retired, only the dpkg baseline remains).
+
+Do not insert other modules between these calls and never move them later in the
+flow. Future work aims to retire ad-hoc apt queues so the dpkg baseline becomes
+the sole source of package state. When in doubt, update the baseline snapshot
+instead of injecting additional installs elsewhere in the run.
+
+### App Installer Matrix
+
+| Module | Installs / Tasks | External Sources & Expectations |
+| --- | --- | --- |
+| `packages.php` | Queues core package groups (system tooling, media/network stack, Python toolchain, misc apps) and stops nginx before refresh. | Uses Debian APT plus the MediaArea bootstrap (`repo-mediaarea_1.0-20_all.deb`); feeds `pmssFlushPackageQueue()`. |
+| `btsync.php` | Maintains BTSync 1.4/2.2 binaries and Resilio `rslsync` under `/usr/bin`. | Downloads binaries from `http://pulsedmedia.com/remote/pkg/`; needs write access to `/usr/bin`. |
+| `deluge.php` | Installs or upgrades Deluge; Debian 10 path builds from source, newer releases lean on apt packages. | Debian 10 run pulls PyPI wheels and `https://ftp.osuosl.org/pub/deluge/source/2.0/deluge-2.0.5.tar.xz`; requires `pip`. |
+| `docker.php` | Sets up rootless Docker (docker-ce, buildx, compose) and enables user namespaces. | Adds Docker APT repo (`https://download.docker.com/linux/debian`), fetches Docker GPG key, and downloads `slirp4netns` from GitHub for Debian 10/11. |
+| `filebot.php` | Ensures FileBot 4.9.4 is installed via dpkg. | Fetches `FileBot_4.9.4_amd64.deb` from `http://pulsedmedia.com/remote/pkg/`. |
+| `firehol.php` | Compiles FireHOL firewall suite when missing. | Downloads `firehol-3.1.6.tar.gz` from `http://pulsedmedia.com/remote/pkg/` and builds under `/root/compile`. |
+| `iprange.php` | Builds `iprange` from source after package stage completes. | Requires `PMSS_PACKAGES_READY` flag and toolchain packages; pulls `iprange-1.0.4.tar.gz` from `http://pulsedmedia.com/remote/pkg/`. |
+| `mono.php` | Installs Mono runtime and clears legacy Sonarr apt entries on old hosts. | Relies on Debian APT; no external mirrors. |
+| `openvpn.php` | Seeds EasyRSA, server/client configs, and writes client bundles to `/etc/skel/www`. | Debian 8 downloads EasyRSA from GitHub (`https://github.com/OpenVPN/easy-rsa/...`); expects templates `template.openvpn.*`. |
+| `pyload.php` | Creates `/opt/pyload` venv and installs `pyload-ng`. | Installs deps via apt then uses pip (PyPI) inside the venv; honours `PMSS_DISTRO_VERSION`. |
+| `python.php` | Provisions FlexGet + gdrivefs virtualenv and CLI symlink. | Executes pip installs (PyPI) for FlexGet stack; assumes Python 3/venv available. |
+| `radarr.php` | Fetches newest Radarr build and deploys to `/opt/Radarr`. | Calls GitHub Releases API (`https://api.github.com/repos/Radarr/Radarr`); downloads tarball via curl. |
+| `rclone.php` | Pins or updates rclone binary and man page. | Downloads from `https://downloads.rclone.org/`; optional latest check hits `https://rclone.org/downloads/`; honours `PMSS_RCLONE_FETCH_LATEST`. |
+| `rtorrent.php` | Rebuilds rTorrent/libtorrent (plus xmlrpc-c), refreshes templates, restarts daemons. | Fetches tarballs from `http://pulsedmedia.com/remote/pkg/`, checks out xmlrpc-c via SourceForge SVN; needs build toolchain. |
+| `sonarr.php` | Installs latest Sonarr under `/opt/Sonarr` and records version metadata. | Uses GitHub Releases API (`https://api.github.com/repos/Sonarr/Sonarr`); removes legacy apt repo artifacts. |
+| `syncthing.php` | Ensures syncthing binary matches pinned version. | Downloads binary from `http://pulsedmedia.com/remote/pkg/` into `/usr/bin`. |
+| `vnstat.php` | Installs/configures vnStat for the detected uplink. | Uses Debian APT; depends on `scripts/lib/networkInfo.php` for interface info. |
+| `watchdog.php` | Disables and removes the distro watchdog daemon. | APT operations only; no external downloads. |
+| `wireguard.php` | Generates WireGuard keys/configs, publishes README, distributes to user homes. | Requires `wg` binaries (from package phase), templates `template.wireguard.*`, and queries `https://pulsedmedia.com/remote/myip.php` for endpoint detection. |
+
+### Execution Outline
+
 1. Detect distro name/version/codename and ensure `update.php` is up to date.
 2. Enforce non-interactive apt settings and finish any pending dpkg configs.
 3. Immediately refresh APT repositories and install every queued package _before_ any
-   other orchestration (this ordering is mandatory for all future regressions). #TODO Once
+   other orchestration (this ordering is mandatory for all future regressions). Once
    the dpkg baselines include the full package set we can drop the per-app queue entirely.
 4. Prepare the host (cgroups, systemd slices, base permissions, MOTD, locales) and
    reapply legacy installer defaults (sysctl tuning, root shell config, `/home`

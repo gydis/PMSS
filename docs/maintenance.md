@@ -40,29 +40,9 @@ git/main:2025-01-01@2025-01-02 03:04
 human-readable JSON structure for audits.
 
 ## 6. Preserve dpkg Baseline
-`scripts/lib/update/dpkg/selections.txt` (and the per-release variants
-`selections-debian10.txt`, `selections-debian11.txt`, `selections-debian12.txt`)
-are captured from production. Do **not** edit them without approval. The
-Bookworm snapshot is derived from the Bullseye list and should be validated in
-testing before production rollout.
-- Be cautious with `install.sh`; it has been in service for over a decade and should only be modified when absolutely necessary.
-- `install.sh` is purely a bootstrap into `update.php`—keep it minimal:
-  1. Ensure core tooling is present (`bash`, `php` CLI, `git`, `curl`, `wget`,
-     `ca-certificates`, `rsync`).
-  2. Fetch or clone the repository so `/scripts`, `/etc`, and `/var` are staged
-     locally.
-  3. Invoke `update.php` with any positional arguments supplied by the operator.
-- To refresh a snapshot: run `dpkg --get-selections > selections-debianXX.txt`
-  on a live host, then remove any `deinstall` entries before committing.
-- After provisioning on a real host, gather a human-readable snapshot with:
-```
-/scripts/util/systemTest.php
-```
-This lists binary versions, configuration presence, and other health probes for
-the production environment.
-- For machine-readable output suitable for dashboards or pipelines, run:
-```
-/scripts/util/componentStatus.php --json
-```
-The command emits structured JSON describing binary/config status without
-mutating the system.
+Before altering anything under `scripts/lib/update/dpkg`, review the full capture
+workflow documented in [`docs/dpkg-baseline.md`](./dpkg-baseline.md). The
+snapshots are lifted from production systems and must remain untouched unless a
+new baseline is captured and validated. Use the commands in that guide to record
+human-readable (`systemTest.php`) and JSON (`componentStatus.php --json`) health
+reports after provisioning.

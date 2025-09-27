@@ -29,3 +29,13 @@ function pmssInstallMiscTools(): void
         pmssQueuePackage('ipset');
     }
 }
+
+function pmssInstallWireguardPackages(): void
+{
+    // Skip queueing when the runtime already has the necessary tooling in place.
+    if (pmssPackagesInstalled(['wireguard-tools']) && pmssPackagesInstalled(['wireguard-dkms'])) {
+        return;
+    }
+
+    pmssQueuePackages(['wireguard', 'wireguard-tools', 'wireguard-dkms']);
+}

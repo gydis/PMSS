@@ -89,7 +89,7 @@ Pulsed Media as a company will not provide support to use this on your own serve
 
 All contributions will be considered. No matter small or big. Your contribution could be as tiny as fixing a typo, or badly worded sentence and it will be much appreciated.
 
-Before submitting updater changes, run the lightweight test suite via `php scripts/lib/tests/Runner.php` to confirm the spec parser still behaves as expected.
+Before submitting updater changes, run the lightweight test suite via `php scripts/lib/tests/development/Runner.php` to confirm the spec parser still behaves as expected.
 
 Some important guidelines:
 

@@ -1373,6 +1373,9 @@ weechat-ruby
 wget
 whiptail
 whois
+wireguard
+wireguard-dkms
+wireguard-tools
 x11-common
 x11-utils
 x11-xserver-utils

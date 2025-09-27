@@ -231,4 +231,7 @@ libreadline8:amd64			install
 librtmp1:amd64			install
 libsasl2-2:amd64			install
 libsasl2-modules:amd64			install
-libsasl2-modules-db:am
+libsasl2-modules-db:amd64			install
+wireguard					install
+wireguard-dkms				install
+wireguard-tools				install

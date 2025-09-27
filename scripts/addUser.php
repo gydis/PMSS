@@ -1,5 +1,15 @@
 #!/usr/bin/php
 <?php
+/**
+ * PMSS user provisioning helper.
+ *
+ * Interactive helper invoked by operators and automation to provision a new
+ * seedbox account. The script wraps useradd, skeleton configuration, service
+ * wiring, and optional traffic limits into a single idempotent workflow so
+ * freshly created users conform to the production baseline.
+ */
+
+// Shell-facing usage string; keep the CLI contract explicit for operators.
 $usage = 'Usage: addUser.php USERNAME PASSWORD MAX_RTORRENT_MEMORY_IN_MB DISK_QUOTA_IN_GB [trafficLimitGB]';
 if (empty($argv[1]) or
     empty($argv[2]) or
@@ -22,6 +32,8 @@ $userDb = new users();
 
 /**
  * Append a message to the provisioning log and console for traceability.
+ *
+ * @param string $message Human-readable status printed for the operator.
  */
 function logProvisionMessage(string $message): void
 {
@@ -33,6 +45,11 @@ function logProvisionMessage(string $message): void
 
 /**
  * Run a shell command and log whether it succeeded without aborting.
+ *
+ * @param string $description Operator-facing label describing the action.
+ * @param string $command     Full shell command executed through runCommand().
+ *
+ * @return int Return code bubbled up from the child command.
  */
 function runProvisionStep(string $description, string $command): int
 {
@@ -76,6 +93,7 @@ if (file_exists('/bin/bash')) { // Set shell
     );
 }
 
+// Record core attributes in the runtime database before provisioning services.
 // Then to DB :)
 $userDb->addUser( $user['name'], array(
     'rtorrentRam' => $user['memory'],
@@ -145,6 +163,7 @@ runProvisionStep('Refresh network rules', '/scripts/util/setupNetwork.php');
 
 if (!empty($user['trafficLimit']) &&
     $user['trafficLimit'] > 0) {
+    // Persist traffic caps for both automation (runtime) and the user directory.
     if (!file_exists("/etc/seedbox/runtime/trafficLimits")) mkdir("/etc/seedbox/runtime/trafficLimits");
     file_put_contents( "/etc/seedbox/runtime/trafficLimits/{$user['name']}", $user['trafficLimit'] );
     chmod( "/etc/seedbox/runtime/trafficLimits/{$user['name']}", 0600  );  // Restrict permissions to this file

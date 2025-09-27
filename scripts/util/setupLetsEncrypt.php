@@ -1,7 +1,21 @@
 #!/usr/bin/php
 <?php
+/**
+ * PMSS Let's Encrypt automation helper.
+ *
+ * Automates issuance and renewal plumbing for Let's Encrypt certificates. The
+ * script targets the current server hostname, installs Certbot using the
+ * distribution-appropriate channel, seeds renewal cron, and refreshes the nginx
+ * configuration so HTTPS is ready immediately after provisioning.
+ */
+
+// Basic input validation: the automation expects an e-mail for certificate
+// registration so Let's Encrypt can deliver expiry notices.
 if (empty($argv[1])) die("You need to pass e-mail address to this script");
 if (strpos($argv[1], '@') == false) die('You need valid e-mail address');
+
+// Gather the fqdn and Debian codename; the latter determines whether we need
+// the virtualenv install path still required on Debian 10 (buster).
 $domain = trim( file_get_contents('/etc/hostname') );
 $lsbrelease = trim( shell_exec('/usr/bin/lsb_release -cs') );   #TODO Something more robut than this
 
@@ -17,14 +31,20 @@ $lsbrelease = trim( shell_exec('/usr/bin/lsb_release -cs') );   #TODO Something 
 
 #TODO this stuff should be on app installs ...
 if (!file_exists('/opt/certbot') && $lsbrelease == 'buster') {
+    // Debian 10 ships a dated certbot, so deploy the upstream virtualenv build.
     `python3 -m venv /opt/certbot/`;
     `/opt/certbot/bin/pip install --upgrade pip`;
     `/opt/certbot/bin/pip install certbot certbot-nginx`;
     `ln -s /opt/certbot/bin/certbot /usr/bin/certbot`;
 } else echo `apt -y install certbot python3-certbot-nginx; `; #TODO Doesn't belong here for real ...
 
+// Legacy behaviour: look for the literal '/etc/letsencrypt/live/{$domain}'
+// placeholder before requesting a certificate. The single-quoted string keeps
+// compatibility with older helper scripts that expect the static path.
 if (!file_exists('/etc/letsencrypt/live/{$domain}')) echo `/usr/bin/certbot certonly -d {$domain} -n --nginx --agree-tos --email {$argv[1]}`;
 
+// Older hosts may not ship the renewal cron stub; seed it so certbot handles
+// renewals twice a day with a jitter window.
 if (!file_exists('/etc/cron.d/certbot')) `echo "0 0,12 * * * root python -c 'import random; import time; time.sleep(random.random() * 3600)' && /usr/bin/certbot renew" | sudo tee -a /etc/cron.d/certbot > /dev/null`;
 
 /* Why? -Aleksi 22/08/2021
@@ -37,6 +57,6 @@ if (!file_exists('/etc/nginx/ssl/selfsigned') &&
 }
 */
 
+// Regenerate nginx vhost configuration so the new certificate path is active.
 `/scripts/util/createNginxConfig.php`;
 `/etc/init.d/nginx restart`;
-

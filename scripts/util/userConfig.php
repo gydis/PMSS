@@ -1,10 +1,12 @@
 #!/usr/bin/php
 <?php
 /**
- * User configuration controller.
+ * PMSS user reconfiguration helper.
  *
- * Delegates to helper modules under scripts/lib/user so the runtime logic stays
- * small and maintainable.
+ * Entry point for updating an existing account's quotas, scheduler weights, and
+ * service configuration. It chains purpose-built helpers so the orchestration
+ * layer remains concise while still enforcing the PMSS baseline on repeated
+ * runs.
  */
 
 require_once '/scripts/lib/user/traffic.php';
@@ -45,11 +47,14 @@ if (strpos($userList, $user['name']) === false) {
     die("No such user in passwd list\n");
 }
 
+// Write optional traffic caps before touching heavyweight services so limits
+// persist even if later steps bail out.
 userApplyTrafficLimit($user);
 
 $user['CPUWeight'] = $user['CPUWeight'] ?: 500;
 $user['IOWeight']  = $user['IOWeight']  ?: 500;
 
+// Compose a canonical rtorrent configuration and mirror it to companion apps.
 $configuration = userConfigureRtorrent($user);
 userConfigureRutorrent($user, $configuration);
 userEnsureRclonePort($user);

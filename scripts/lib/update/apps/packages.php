@@ -18,3 +18,4 @@ pmssInstallPythonToolchain($version);
 pmssInstallSabnzbd();
 pmssInstallZncStack($version);
 pmssInstallMiscTools();
+pmssInstallWireguardPackages();

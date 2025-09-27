@@ -1465,6 +1465,9 @@ weechat-ruby					install
 wget						install
 whiptail					install
 whois						install
+wireguard					install
+wireguard-dkms				install
+wireguard-tools				install
 x11-common					install
 x11-utils					install
 x11-xserver-utils				install

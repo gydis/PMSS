@@ -12,9 +12,17 @@ A quick map for agents touching this repository:
 - `scripts/util/systemTest.php` offers a read-only CLI probe of system readiness (binary versions, config presence). Run it only on real hosts after provisioning.
 
 ## Bootstrap Flow
-1. **install.sh** – Minimal installer that ensures base tools (bash, php, git, curl, wget, ca-certificates, rsync) are present, fetches `/scripts`/`/etc`/`/var`, then invokes `/scripts/update.php` with any CLI args. Treat it as a thin wrapper.
-2. **update.php** – Fetches the requested snapshot (git branch, release), stages the tree, records `/etc/seedbox/config/version`, re-runs itself if updated, then hands off to `update-step2.php`. Logs to `/var/log/pmss-update.log` and `/var/log/pmss-update.jsonl`.
-3. **update-step2.php** – Main orchestrator. Detects distro from `/etc/os-release`, resolves the apt suite (codename > VERSION_ID, otherwise skip with warning), refreshes repos, flushes package queues, then runs helper modules under `scripts/lib/update/`.
+Keep the canonical installer/update details under `docs/install.md` and
+`docs/update.md`. This section highlights the responsibility breakpoints:
+
+1. **install.sh** – Thin bootstrapper; ensures core tools exist and then defers
+   to `update.php`. See [`docs/install.md`](./install.md) for the authoritative
+   checklist.
+2. **update.php** – Snapshot fetch + staging. Logging, argument parsing, and
+   hand-off behaviour live in [`docs/update.md`](./update.md#phase-1--scriptsupdatephp).
+3. **update-step2.php** – Orchestrator that consumes the staged tree and runs
+   modules under `scripts/lib/update/`. Responsibilities and ordering are
+   documented in [`docs/update.md`](./update.md#phase-2--scriptsutilupdate-step2php).
 
 ## Key Modules
 - **scripts/lib/update/environment.php** – dpkg/apt guards plus helper to apply release-specific package selections.

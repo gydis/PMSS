@@ -1,7 +1,10 @@
 #!/usr/bin/php
 <?php
 /**
- * Configure network firewalling and traffic shaping for PMSS hosts.
+ * PMSS network bootstrap utility.
+ *
+ * Centralises firewall and FireQOS updates so update.php can invoke it
+ * repeatedly while keeping tenant-specific overrides intact.
  */
 
 require_once '/scripts/lib/network/config.php';
