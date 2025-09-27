@@ -7,11 +7,33 @@
  */
 #TODO Wrong naming etc.
 
-passthru("cd /etc/skel; chmod o-w * -R; chmod o-w .* -R"); // not using 775 because there might be places where the perms differ and need to differ
-passthru("chmod 770 /etc/skel");
+require_once __DIR__.'/../lib/logger.php';
+require_once __DIR__.'/../lib/runtime.php';
+require_once __DIR__.'/../lib/update/runtime/commands.php';
 
-passthru("cd /etc/seedbox; chmod o-w * -R; chmod o-w .* -R"); // not using 775 because there might be places where the perms differ and need to differ
-passthru("chmod o+x /etc/seedbox");
+requireRoot();
+
+$exitCodes = [];
+
+if (is_dir('/etc/skel')) {
+    $exitCodes[] = runStep(
+        'Hardening /etc/skel content permissions',
+        'cd /etc/skel && chmod o-w * -R && chmod o-w .* -R'
+    ); // not using 775 because there might be places where the perms differ and need to differ
+    $exitCodes[] = runStep('Restricting /etc/skel directory permissions', 'chmod 770 /etc/skel');
+} else {
+    logmsg('Skipping /etc/skel permission adjustments; directory missing');
+}
+
+if (is_dir('/etc/seedbox')) {
+    $exitCodes[] = runStep(
+        'Hardening /etc/seedbox content permissions',
+        'cd /etc/seedbox && chmod o-w * -R && chmod o-w .* -R'
+    ); // not using 775 because there might be places where the perms differ and need to differ
+    $exitCodes[] = runStep('Ensuring /etc/seedbox is traversable', 'chmod o+x /etc/seedbox');
+} else {
+    logmsg('Skipping /etc/seedbox permission adjustments; directory missing');
+}
 
 // Setup openvpn config perms
 if (is_dir('/etc/openvpn')) {
@@ -61,3 +83,6 @@ if (is_dir($configDir)) {
     // Ensure the root directory keeps execute permission for traversal.
     @chmod($configDir, 0775);
 }
+
+$failed = array_filter($exitCodes, static fn($rc) => $rc !== 0);
+exit($failed ? 1 : 0);

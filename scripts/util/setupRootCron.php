@@ -1,8 +1,35 @@
 #!/usr/bin/php
 <?php
-copy('/etc/seedbox/config/root.cron', '/etc/cron.d/pmss');
-passthru('chmod 644 /etc/cron.d/pmss');
+/**
+ * Sync the root cron template and restart the daemon using the shared
+ * runStep() helper so executions are logged consistently.
+ */
 
+require_once __DIR__.'/../lib/logger.php';
+require_once __DIR__.'/../lib/runtime.php';
+require_once __DIR__.'/../lib/update/runtime/commands.php';
 
-passthru('/etc/init.d/cron force-reload');
-passthru('/etc/init.d/cron restart');
+requireRoot();
+
+$source = '/etc/seedbox/config/root.cron';
+$target = '/etc/cron.d/pmss';
+
+if (!is_readable($source)) {
+    logmsg('Root cron template missing; aborting without changes');
+    exit(1);
+}
+
+$exitCodes = [];
+$exitCodes[] = runStep(
+    'Deploying root cron template',
+    sprintf(
+        'install -m 0644 %s %s',
+        escapeshellarg($source),
+        escapeshellarg($target)
+    )
+);
+$exitCodes[] = runStep('Reloading cron daemon', '/etc/init.d/cron force-reload');
+$exitCodes[] = runStep('Restarting cron daemon', '/etc/init.d/cron restart');
+
+$failed = array_filter($exitCodes, static fn($rc) => $rc !== 0);
+exit($failed ? 1 : 0);
