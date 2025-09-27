@@ -48,14 +48,5 @@ function pmssInstallZncStack(int $distroVersion): void
         'python3-libtorrent',
     ]);
 
-    pmssQueuePostInstallCommand(
-        'Installing acd_cli helper',
-        'python3 -m pip install --upgrade git+https://github.com/yadayada/acd_cli.git' // #TODO move to dedicated venv
-    );
-
-    if (!file_exists('/usr/bin/ffmpeg')) {
-        pmssQueuePackage('ffmpeg');
-    }
-
-    pmssQueuePostInstallCommand('Disabling legacy lighttpd service', 'systemctl disable lighttpd || true');
+    // ffmpeg ships via the dpkg baselines; no additional queueing required here.
 }

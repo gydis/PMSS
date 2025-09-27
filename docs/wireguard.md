@@ -22,3 +22,30 @@ A cron watchdog (`checkWireguard.php`) ensures the kernel module stays loaded an
 Endpoint detection prefers resolving the host's FQDN and falls back to a public
 IP lookup plus interface inspection. Make sure the hostname resolves externally
 or update the generated `~/wireguard.txt` with the correct address if needed.
+
+## End-User Quick Start
+
+1. Download the contents of your `~/wireguard.txt` file (or copy it securely)
+   and import it into your WireGuard client. Replace `<client private key>`
+   with the private key you generated locally.
+2. Keep the interface marked as a *Public/Untrusted* network profile on your
+   operating system. All tenants share the `10.90.90.0/24` overlay so treating
+   the link as a trusted LAN is unsafe unless you have explicit peer agreements.
+3. Restrict local firewalls to the services you want reachable through the VPN.
+   The server enforces NAT and forwarding centrally, so only the ports you
+   expose on your device become reachable by other peers.
+4. Regenerate a new client key pair and send the public key to support if your
+   device is lost or compromised so the old peer entry can be revoked.
+
+## Developer Notes
+
+- The WireGuard installer is covered by hermetic tests in
+  `scripts/lib/tests/development/WireguardInstallerTest.php`. These tests seed
+  behaviour via environment overrides such as `PMSS_WG_DNS_IP` (mock DNS
+  resolution), `PMSS_WG_EXTERNAL_IP` (stub public IP helper),
+  `PMSS_WG_INTERFACE_IP` (fake uplink address), and `PMSS_WG_USER_LIST`
+  (synthetic tenant roster).
+- Additional overrides include `PMSS_WG_CONFIG_DIR` for staging config output
+  inside `/tmp`, `PMSS_WG_HOME_BASE` for per-user file fan-out, and
+  `PMSS_WG_PRIVATE_KEY` / `PMSS_WG_PUBLIC_KEY` for deterministic key material.
+  Use these to exercise new code paths without touching the real filesystem.

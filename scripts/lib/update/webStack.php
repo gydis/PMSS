@@ -12,6 +12,8 @@ if (!function_exists('pmssConfigureWebStack')) {
      */
     function pmssConfigureWebStack(int $distroVersion): void
     {
+        // Stop nginx first so package upgrades and template refreshes never race against an active daemon.
+        runStep('Stopping nginx prior to configuration refresh', 'systemctl stop nginx || /etc/init.d/nginx stop || true');
         if ($distroVersion < 10) {
             runStep('Stopping lighttpd (init.d)', '/etc/init.d/lighttpd stop');
             runStep('Disabling lighttpd from sysvinit runlevels', 'update-rc.d lighttpd stop 2 3 4 5');

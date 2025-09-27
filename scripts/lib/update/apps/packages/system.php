@@ -1,6 +1,13 @@
 <?php
 /**
  * Base system package groups.
+ *
+ * Debian support matrix:
+ *   - 10 (buster): queues base/system/media sets plus kernel/firmware from
+ *     buster-backports when available.
+ *   - 11 (bullseye) and 12 (bookworm): reuse the same package lists; helpers
+ *     rely on dpkg baselines to keep drift minimal.
+ *   - <10: installers log a warning and skip execution.
  */
 
 require_once __DIR__.'/helpers.php';
@@ -37,10 +44,6 @@ function pmssInstallMediaAndNetworkTools(int $distroVersion): void
     }
 
     pmssQueuePackages(['libzen0v5', 'sox', 'tmux', 'tree', 'ncdu', 'weechat', 'php-xml', 'php-zip', 'php-sqlite3', 'php-mbstring', 'qbittorrent-nox']);
-    if (!file_exists('/etc/apt/sources.list.d/mediaarea.list')) {
-        runStep('Adding mediaarea repository', 'wget https://mediaarea.net/repo/deb/repo-mediaarea_1.0-20_all.deb && dpkg -i repo-mediaarea_1.0-20_all.deb && apt-get update');
-    }
-    pmssQueuePackages(['mediainfo', 'libmediainfo0v5']);
 
     pmssQueuePackages(['zsh', 'atop', 'php-cgi', 'php-cli']);
     pmssQueuePackages(['aria2', 'htop', 'mtr', 'mktorrent']);
@@ -65,5 +68,4 @@ function pmssInstallMediaAndNetworkTools(int $distroVersion): void
     pmssQueuePackages(['libarchive-zip-perl', 'libnet-ssleay-perl', 'libhtml-parser-perl', 'libxml-libxml-perl', 'libjson-perl', 'libjson-xs-perl', 'libxml-libxslt-perl']);
     pmssQueuePackages(['lftp']);
     pmssQueuePackages(['nginx', 'ntp']);
-    runStep('Stopping nginx to prepare for configuration refresh', '/etc/init.d/nginx stop');
 }

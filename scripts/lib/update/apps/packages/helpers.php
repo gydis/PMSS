@@ -10,6 +10,13 @@ putenv('APT_LISTCHANGES_FRONTEND=none');
 
 const PMSS_PACKAGE_QUEUE_DEFAULT = '__default__';
 
+// Global state shared between installer helpers:
+//   - PMSS_PACKAGE_QUEUE: keyed by target suite (default/backports) with unique
+//     package names to install.
+//   - PMSS_POST_INSTALL_COMMANDS: array of [description, command] pairs executed
+//     after all queues flush successfully.
+//   - PMSS_PACKAGE_WARNINGS / ERRORS: strings describing skipped or failed
+//     packages; summarised into environment variables for update-step2.
 if (!isset($GLOBALS['PMSS_PACKAGE_QUEUE'])) {
     $GLOBALS['PMSS_PACKAGE_QUEUE'] = [];
 }
@@ -35,7 +42,7 @@ function pmssQueuePackages(array $packages, ?string $target = null): void
     }
     foreach ($packages as $pkg) {
         $pkg = trim($pkg);
-        if ($pkg !== '') {
+        if ($pkg !== '' && !in_array($pkg, $PMSS_PACKAGE_QUEUE[$key], true)) {
             $PMSS_PACKAGE_QUEUE[$key][] = $pkg;
         }
     }
@@ -257,6 +264,12 @@ function pmssFilterAvailablePackages(array $packages): array
 
 /**
  * Install the ProFTPD stack with recovery for half-installed states.
+ *
+ * ProFTPD routinely wedges dpkg when hostname lookups or TLS material are
+ * missing. A failed post-install script leaves the entire package manager in a
+ * broken state, so we unmask the unit up front and retry configuration with a
+ * reduced package set. Keep this guarded flow intact unless ProFTPD finally
+ * stops treating minor config issues as fatal errors.
  */
 function pmssInstallProftpdStack(int $distroVersion): void
 {

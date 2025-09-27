@@ -1,5 +1,16 @@
 #!/usr/bin/php
 <?php
+/**
+ * Cron watchdog ensuring each user retains a web GUI entry point.
+ *
+ * Preconditions:
+ *   - User homes live under `/home/<user>` with `www/` mirroring the skeleton.
+ *   - A healthy GUI exposes `www/index.php`; missing or zero-byte files are
+ *     restored from `/etc/skel/www/index.php`.
+ *
+ * Future enhancements may add HTTP responsiveness probes; keep the watchdog
+ * lightweight and idempotent so it can run every few minutes without churn.
+ */
 // Check user's GUI index.php
 $users = shell_exec('/scripts/listUsers.php');
 $users = explode("\n", trim($users));
@@ -18,5 +29,4 @@ foreach($users AS $thisUser) {    // Loop users checking their instances
 	#TODO Check responsiveness etc. other common stuff as well.
 
 }
-
 

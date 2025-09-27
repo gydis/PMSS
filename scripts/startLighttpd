@@ -1,7 +1,19 @@
 #!/usr/bin/php
 <?php
 # Pulsed Media Seedbox Management Software "PMSS"
-# Start user's lighttpd process
+/**
+ * Bootstrap a tenant-specific lighttpd instance.
+ *
+ * Preconditions:
+ *   - `/home/<user>/.lighttpd.conf` exists and references per-user sockets.
+ *   - lighttpd binary installed at `/usr/sbin/lighttpd`.
+ *   - User home writable to create `.lighttpd/` state directories when missing.
+ *
+ * Postconditions:
+ *   - Required subdirectories (`.lighttpd`, `.lighttpd/upload`, `.lighttpd/compress`)
+ *     exist with user ownership.
+ *   - User lighttpd process launched; script prints `ps` output for visibility.
+ */
 
 if ($argc != 2) die("Usage: startLighttpd USERNAME\n");
 $user = $argv[1];

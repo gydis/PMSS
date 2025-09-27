@@ -1,5 +1,18 @@
 #!/usr/bin/php
 <?php
+/**
+ * Interactive user data migration helper.
+ *
+ * - Prompts for remote credentials and builds temporary Expect/rsync scripts
+ *   under `/root/` to pull a tenant's home, www, and session data from another
+ *   host. Scripts are deleted at the end, but operators must ensure the run
+ *   happens on a trusted console; passwords are stored in plaintext while the
+ *   transfer executes.
+ * - Destination user must exist locally, and the script auto-appends
+ *   `.pulsedmedia.com` when the hostname lacks a dot for convenience.
+ * - Idempotent up to manual intervention: reruns overwrite files, then queue an
+ *   rTorrent restart marker so the new data takes effect.
+ */
 #TODO Make this fork a process on BG!
 $usage = "Usage: ./userConfig.php LOCAL_USERNAME [REMOTE_USERNAME] REMOTE_HOSTNAME\n";
 $usage .= "If only 3 arguments, remote username is considered to be the same as local username\n";

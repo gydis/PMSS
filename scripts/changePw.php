@@ -1,5 +1,15 @@
 #!/usr/bin/php
 <?php
+/**
+ * Update a tenant's system and HTTP credentials.
+ *
+ * - Accepts an optional password argument; otherwise generates one using the
+ *   legacy seed algorithm so existing automation keeps predictable entropy.
+ * - Invokes `passwd` for the Unix account and rewrites the lighttpd htpasswd
+ *   entry (creating the file when missing).
+ * - Passwords are echoed to the operator; call sites must ensure the terminal
+ *   history is handled appropriately.
+ */
 $usage = 'Usage: changePw.php USERNAME [PASSWORD]';
 if (empty($argv[1])) die($usage . "\nPassword is optional - random one will be generated if it's empty\n");
 if (!file_exists("/home/{$argv[1]}") or

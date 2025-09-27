@@ -88,11 +88,19 @@ flow. Future work aims to retire ad-hoc apt queues so the dpkg baseline becomes
 the sole source of package state. When in doubt, update the baseline snapshot
 instead of injecting additional installs elsewhere in the run.
 
+`pmssEnsureRepositoryPrerequisites()` runs ahead of each `apt update` to make
+sure external signing keys (notably MediaArea for `mediainfo`) are ready before
+the templates add their sources. ProFTPD remains a notorious dpkg failure mode
+when hostnames or TLS assets are missing, so `pmssInstallProftpdStack()` keeps
+the unit unmasked and retries `dpkg --configure` to stop the package manager
+from wedging mid-run.
+
 ### App Installer Matrix
 
 | Module | Installs / Tasks | External Sources & Expectations |
 | --- | --- | --- |
-| `packages.php` | Queues core package groups (system tooling, media/network stack, Python toolchain, misc apps) and stops nginx before refresh. | Uses Debian APT plus the MediaArea bootstrap (`repo-mediaarea_1.0-20_all.deb`); feeds `pmssFlushPackageQueue()`. |
+| `packages.php` | Queues core package groups (system tooling, media/network stack, Python toolchain, misc apps). | Relies on Debian APT (MediaArea repo shipped via templates) and feeds `pmssFlushPackageQueue()`. |
+| `acdcli.php` | Installs/upgrades `acd_cli` inside `/opt/acd_cli` virtualenv and links the CLI. | Pulls from GitHub (`git+https://github.com/yadayada/acd_cli.git`) via the venv’s pip; requires python3/venv tooling. |
 | `btsync.php` | Maintains BTSync 1.4/2.2 binaries and Resilio `rslsync` under `/usr/bin`. | Downloads binaries from `http://pulsedmedia.com/remote/pkg/`; needs write access to `/usr/bin`. |
 | `deluge.php` | Installs or upgrades Deluge; Debian 10 path builds from source, newer releases lean on apt packages. | Debian 10 run pulls PyPI wheels and `https://ftp.osuosl.org/pub/deluge/source/2.0/deluge-2.0.5.tar.xz`; requires `pip`. |
 | `docker.php` | Sets up rootless Docker (docker-ce, buildx, compose) and enables user namespaces. | Adds Docker APT repo (`https://download.docker.com/linux/debian`), fetches Docker GPG key, and downloads `slirp4netns` from GitHub for Debian 10/11. |
@@ -111,6 +119,8 @@ instead of injecting additional installs elsewhere in the run.
 | `vnstat.php` | Installs/configures vnStat for the detected uplink. | Uses Debian APT; depends on `scripts/lib/networkInfo.php` for interface info. |
 | `watchdog.php` | Disables and removes the distro watchdog daemon. | APT operations only; no external downloads. |
 | `wireguard.php` | Generates WireGuard keys/configs, publishes README, distributes to user homes. | Requires `wg` binaries (from package phase), templates `template.wireguard.*`, and queries `https://pulsedmedia.com/remote/myip.php` for endpoint detection. |
+
+Other Python-driven installers (e.g. Deluge’s Debian 10 bootstrap) still rely on the system interpreter; track them for future virtualenv migrations so pip activity stays isolated per app.
 
 ### Execution Outline
 

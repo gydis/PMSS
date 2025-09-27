@@ -16,6 +16,51 @@ function wgLog(string $message): void
     logmsg('[wireguard] '.$message);
 }
 
+/**
+ * Return the directory used for WireGuard configuration state.
+ */
+function wgConfigDir(): string
+{
+    $override = getenv('PMSS_WG_CONFIG_DIR');
+    if ($override !== false && $override !== '') {
+        return rtrim($override, '/');
+    }
+    return '/etc/wireguard';
+}
+
+/**
+ * Compose an absolute path inside the WireGuard configuration directory.
+ */
+function wgConfigPath(string $file): string
+{
+    return wgConfigDir().'/'.$file;
+}
+
+/**
+ * Resolve the home directory base used when distributing user files.
+ */
+function wgHomeBase(): string
+{
+    $override = getenv('PMSS_WG_HOME_BASE');
+    if ($override !== false && $override !== '') {
+        return rtrim($override, '/');
+    }
+    return '/home';
+}
+
+/**
+ * Enumerate tenants targeted for configuration distribution.
+ */
+function wgListHomeUsers(): array
+{
+    $override = getenv('PMSS_WG_USER_LIST');
+    if ($override !== false && $override !== '') {
+        $users = array_filter(array_map('trim', explode(',', $override)), 'strlen');
+        return array_values($users);
+    }
+    return users::listHomeUsers();
+}
+
 function wgSupports(): bool
 {
     exec('command -v wg', $out, $rc);
@@ -26,6 +71,37 @@ function wgSupports(): bool
     return true;
 }
 
+/**
+ * Produce a WireGuard private key, optionally via test overrides.
+ */
+function wgGeneratePrivateKey(): string
+{
+    $override = getenv('PMSS_WG_PRIVATE_KEY');
+    if ($override !== false) {
+        return trim($override);
+    }
+
+    exec('wg genkey', $privOut, $rc);
+    return $rc === 0 ? trim($privOut[0] ?? '') : '';
+}
+
+/**
+ * Derive the WireGuard public key from the supplied private key.
+ */
+function wgDerivePublicKey(string $private): string
+{
+    $override = getenv('PMSS_WG_PUBLIC_KEY');
+    if ($override !== false) {
+        return trim($override);
+    }
+
+    exec('echo '.escapeshellarg($private).' | wg pubkey', $pubOut, $rc);
+    return $rc === 0 ? trim($pubOut[0] ?? '') : '';
+}
+
+/**
+ * Confirm that the supplied address is a routable public IPv4 endpoint.
+ */
 function wgValidatePublicIp(string $candidate): ?string
 {
     $candidate = trim($candidate);
@@ -38,9 +114,17 @@ function wgValidatePublicIp(string $candidate): ?string
     return $ip === false ? null : $ip;
 }
 
+/**
+ * Query the external helper service for the host's public address.
+ */
 function wgFetchExternalEndpoint(): ?string
 {
     // #TODO Replace with an internal endpoint discovery helper instead of calling out.
+    $override = getenv('PMSS_WG_EXTERNAL_IP');
+    if ($override !== false) {
+        return $override === '' ? null : wgValidatePublicIp($override);
+    }
+
     $url     = 'https://pulsedmedia.com/remote/myip.php';
     $context = stream_context_create(['http' => ['timeout' => 3]]);
     $response = @file_get_contents($url, false, $context);
@@ -51,8 +135,16 @@ function wgFetchExternalEndpoint(): ?string
     return wgValidatePublicIp($response);
 }
 
+/**
+ * Discover the IPv4 address currently bound to the uplink interface.
+ */
 function wgDetectInterfaceAddress(): ?string
 {
+    $override = getenv('PMSS_WG_INTERFACE_IP');
+    if ($override !== false && $override !== '') {
+        return trim($override);
+    }
+
     $interface = detectPrimaryInterface();
     if ($interface === '') {
         return null;
@@ -74,12 +166,20 @@ function wgDetectInterfaceAddress(): ?string
     return null;
 }
 
+/**
+ * Determine the best endpoint to advertise to tenants.
+ */
 function wgResolveEndpoint(string $hostname): array
 {
     // Prefer DNS resolution before hitting external services or interface inspection.
     $hostnameIp = '';
     if ($hostname !== '') {
-        $resolved = gethostbyname($hostname);
+        $dnsOverride = getenv('PMSS_WG_DNS_IP');
+        if ($dnsOverride !== false && $dnsOverride !== '') {
+            $resolved = $dnsOverride;
+        } else {
+            $resolved = gethostbyname($hostname);
+        }
         if ($resolved !== $hostname) {
             $hostnameIp = $resolved;
             $public     = wgValidatePublicIp($resolved);
@@ -110,6 +210,9 @@ function wgResolveEndpoint(string $hostname): array
     return ['', 'unknown'];
 }
 
+/**
+ * Ensure server key material exists, creating it when missing.
+ */
 function wgEnsureKeys(string $dir): array
 {
     $privFile = $dir.'/server_private.key';
@@ -119,16 +222,14 @@ function wgEnsureKeys(string $dir): array
         return [trim((string)file_get_contents($privFile)), trim((string)file_get_contents($pubFile))];
     }
 
-    exec('wg genkey', $privOut, $rc);
-    $priv = $privOut[0] ?? '';
-    if ($rc !== 0 || $priv === '') {
+    $priv = wgGeneratePrivateKey();
+    if ($priv === '') {
         wgLog('Failed to generate server private key');
         return ['', ''];
     }
 
-    exec('echo '.escapeshellarg($priv).' | wg pubkey', $pubOut, $rc);
-    $pub = $pubOut[0] ?? '';
-    if ($rc !== 0 || $pub === '') {
+    $pub = wgDerivePublicKey($priv);
+    if ($pub === '') {
         wgLog('Failed to derive server public key');
         return ['', ''];
     }
@@ -140,6 +241,9 @@ function wgEnsureKeys(string $dir): array
     return [$priv, $pub];
 }
 
+/**
+ * Render the provided template file with placeholder replacements.
+ */
 function wgRenderTemplate(string $path, array $placeholders): ?string
 {
     $template = @file_get_contents($path);
@@ -150,9 +254,12 @@ function wgRenderTemplate(string $path, array $placeholders): ?string
     return str_replace(array_keys($placeholders), array_values($placeholders), $template);
 }
 
+/**
+ * Lay down the initial WireGuard configuration when absent.
+ */
 function wgWriteConfig(string $privKey, int $port): void
 {
-    $configPath = '/etc/wireguard/wg0.conf';
+    $configPath = wgConfigPath('wg0.conf');
     if (file_exists($configPath)) {
         wgLog('Existing wg0.conf detected; skipping overwrite');
         return;
@@ -174,6 +281,9 @@ function wgWriteConfig(string $privKey, int $port): void
     wgLog('Base configuration written to '.$configPath);
 }
 
+/**
+ * Refresh the operator README with the currently advertised endpoint.
+ */
 function wgWriteReadme(string $hostname, string $endpoint, string $pubKey, int $port): string
 {
     $rendered = wgRenderTemplate(
@@ -188,17 +298,21 @@ function wgWriteReadme(string $hostname, string $endpoint, string $pubKey, int $
     if ($rendered === null) {
         return '';
     }
-    file_put_contents('/etc/wireguard/README', $rendered);
+    file_put_contents(wgConfigPath('README'), $rendered);
     return $rendered;
 }
 
+/**
+ * Copy connection instructions to every tenant home directory.
+ */
 function wgDistributeToUsers(string $content): void
 {
     if ($content === '') {
         return;
     }
-    foreach (users::listHomeUsers() as $user) {
-        $target = "/home/{$user}/wireguard.txt";
+    $homeBase = wgHomeBase();
+    foreach (wgListHomeUsers() as $user) {
+        $target = $homeBase.'/'.$user.'/wireguard.txt';
         @file_put_contents($target, $content);
         @chown($target, $user);
         @chgrp($target, $user);
@@ -206,8 +320,15 @@ function wgDistributeToUsers(string $content): void
     }
 }
 
+/**
+ * Enable and start the wg-quick unit unless explicitly disabled.
+ */
 function wgEnableService(): void
 {
+    if (getenv('PMSS_WG_SKIP_SERVICE') === '1') {
+        wgLog('Service enable skipped via PMSS_WG_SKIP_SERVICE');
+        return;
+    }
     if (!is_dir('/run/systemd/system')) {
         wgLog('systemd unavailable; skipping wg-quick@wg0 enable');
         return;
@@ -218,34 +339,36 @@ function wgEnableService(): void
     }
 }
 
-if (!is_dir('/etc/wireguard')) {
-    @mkdir('/etc/wireguard', 0750, true);
+if (!defined('PMSS_WIREGUARD_NO_ENTRYPOINT')) {
+    if (!is_dir(wgConfigDir())) {
+        @mkdir(wgConfigDir(), 0750, true);
+    }
+
+    if (!wgSupports()) {
+        wgLog('WireGuard tooling missing; ensure packages are installed via pmssInstallWireguardPackages()');
+        return;
+    }
+
+    [$privKey, $pubKey] = wgEnsureKeys(wgConfigDir());
+    if ($privKey === '' || $pubKey === '') {
+        return;
+    }
+
+    $listenPort = 51820;
+    wgWriteConfig($privKey, $listenPort);
+
+    $hostname = trim((string)file_get_contents('/etc/hostname'));
+    [$endpoint, $endpointSource] = wgResolveEndpoint($hostname);
+    if ($endpoint === '') {
+        // Ensure users still receive usable details even when endpoint discovery fails.
+        wgLog('Unable to determine public endpoint; falling back to hostname '.$hostname);
+        $endpoint = $hostname;
+    } else {
+        wgLog(sprintf('Using %s endpoint %s', $endpointSource, $endpoint));
+    }
+
+    // Keep the README in sync so operators and users see the current endpoint.
+    $guide = wgWriteReadme($hostname, $endpoint, $pubKey, $listenPort);
+    wgDistributeToUsers($guide);
+    wgEnableService();
 }
-
-if (!wgSupports()) {
-    wgLog('WireGuard tooling missing; ensure packages are installed via pmssInstallWireguardPackages()');
-    return;
-}
-
-[$privKey, $pubKey] = wgEnsureKeys('/etc/wireguard');
-if ($privKey === '' || $pubKey === '') {
-    return;
-}
-
-$listenPort = 51820;
-wgWriteConfig($privKey, $listenPort);
-
-$hostname = trim((string)file_get_contents('/etc/hostname'));
-[$endpoint, $endpointSource] = wgResolveEndpoint($hostname);
-if ($endpoint === '') {
-    // Ensure users still receive usable details even when endpoint discovery fails.
-    wgLog('Unable to determine public endpoint; falling back to hostname '.$hostname);
-    $endpoint = $hostname;
-} else {
-    wgLog(sprintf('Using %s endpoint %s', $endpointSource, $endpoint));
-}
-
-// Keep the README in sync so operators and users see the current endpoint.
-$guide = wgWriteReadme($hostname, $endpoint, $pubKey, $listenPort);
-wgDistributeToUsers($guide);
-wgEnableService();

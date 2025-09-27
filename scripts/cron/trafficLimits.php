@@ -83,7 +83,11 @@ function pmssReadTrafficData(string $path, string $username): ?array
 }
 
 
-#TODO Refactor following, a little bit hard to read code
+// Enforce traffic throttling: when usage exceeds the configured limit touch the
+// `.enabled` marker (keeping it fresh so sustained overages remain throttled).
+// Once usage drops below the threshold for the configured cooldown window,
+// remove the marker and lift the rate limit. The double disable call guards
+// against occasional router desyncs.
 foreach ($trafficData AS $thisUser => $thisData) {
     $trafficLimitEnabledTime = 0;
     $userTrafficLimitEnabledFile = "/var/run/pmss/trafficLimits/{$thisUser}.enabled";

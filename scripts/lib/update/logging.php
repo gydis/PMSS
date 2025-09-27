@@ -7,15 +7,25 @@ if (!defined('PMSS_LOG_FILE')) {
     define('PMSS_LOG_FILE', '/var/log/pmss-update.log');
 }
 
+if (!isset($GLOBALS['PMSS_JSON_LOG_PATH'])) {
+    $GLOBALS['PMSS_JSON_LOG_PATH'] = null;
+}
+
 if (!function_exists('pmssJsonLogPath')) {
     function pmssJsonLogPath(): string
     {
-        static $path = null;
-        if ($path === null) {
+        if ($GLOBALS['PMSS_JSON_LOG_PATH'] === null) {
             $candidate = getenv('PMSS_JSON_LOG') ?: '';
-            $path = $candidate !== '' ? $candidate : '';
+            $GLOBALS['PMSS_JSON_LOG_PATH'] = $candidate !== '' ? $candidate : '';
         }
-        return $path;
+        return $GLOBALS['PMSS_JSON_LOG_PATH'];
+    }
+}
+
+if (!function_exists('pmssResetJsonLogPath')) {
+    function pmssResetJsonLogPath(): void
+    {
+        $GLOBALS['PMSS_JSON_LOG_PATH'] = null;
     }
 }
 

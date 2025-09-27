@@ -44,5 +44,5 @@ Before altering anything under `scripts/lib/update/dpkg`, review the full captur
 workflow documented in [`docs/dpkg-baseline.md`](./dpkg-baseline.md). The
 snapshots are lifted from production systems and must remain untouched unless a
 new baseline is captured and validated. Use the commands in that guide to record
-human-readable (`systemTest.php`) and JSON (`componentStatus.php --json`) health
-reports after provisioning.
+human-readable (`systemTest.php`) and JSON (`systemTest.php --json` or
+`componentStatus.php --json`) health reports after provisioning.

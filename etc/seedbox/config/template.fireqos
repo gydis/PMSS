@@ -1,3 +1,11 @@
+# FireQOS policy template – seeded by setupNetwork.php/update-step2.
+#
+# Placeholders:
+#   ##INTERFACE   -> uplink interface name (e.g., eth0)
+#   ##SPEEDMbit   -> interface speed in Mbit for shaping limits
+#   ##LOCALNETWORK -> newline-delimited CIDRs exempted from shaping
+#   ##USERMATCHES -> generated `match` statements per user class
+
 DEVICE=##INTERFACE
 INTERFACE_SPEED=##SPEEDMbit
 #Uncomment following if you have issues matching users
@@ -6,10 +14,12 @@ INTERFACE_SPEED=##SPEEDMbit
 interface $DEVICE outbound output rate $INTERFACE_SPEED
 
 ##LOCALNETWORK
+# ^ setupNetwork.php injects `match src <cidr>` lines here so LAN ranges bypass shaping.
 
 #Users grouped into single group below. commit means minimum rate
 class group users commit 50% ceil 95% balanced
   ##USERMATCHES
+  # ^ Generated `match mark` statements per user by setupNetwork.php.
 class group end
 
 class interactive   commit 5%
@@ -18,4 +28,3 @@ class interactive   commit 5%
 #    match tcp port 80       #http
 #    match tcp port 443      #https
     match udp port 53       #DNS
-

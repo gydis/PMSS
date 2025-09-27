@@ -15,6 +15,12 @@
  * Keep local changes minimal or contribute them upstream.
  */
 
+// Module load order mirrors the runtime sequence. Keep shared runtime helpers
+// first, followed by environment detection, repository setup, system prep, web
+// stack, service bundles, user refresh, networking, and finally bootstrap
+// helpers. When adding a new orchestrator, pick the insertion point carefully
+// and document its failure behaviour so future maintainers know whether errors
+// should halt the run or log-and-continue.
 require_once __DIR__.'/../lib/update.php';
 require_once __DIR__.'/../lib/update/runtime/profile.php';
 require_once __DIR__.'/../lib/update/runtime/commands.php';
@@ -88,6 +94,11 @@ if (!function_exists('logmsg')) {
 }
 
 $GLOBALS['PMSS_PACKAGES_READY'] = false;
+// PMSS_PACKAGE_PHASE advertises coarse progress to sub-processes. Current
+// values: `initializing` (pre-package work) and `complete` (package queues and
+// baselines finished). Future phases may slot in between; consumers should
+// treat unknown values as "in progress". Always flip the flag after logging the
+// matching step so external monitors keep ordering intact.
 putenv('PMSS_PACKAGE_PHASE=initializing');
 
 $effectiveRepoVersion = $repoVersion > 0 ? $repoVersion : $reportedVersion;
@@ -114,6 +125,10 @@ pmssRefreshRepositories($distroName, $effectiveRepoVersion, 'logmsg');
 pmssAutoremovePackages();
 pmssCompletePendingDpkg();
 $dpkgBaselineOk = pmssApplyDpkgSelections($effectiveRepoVersion > 0 ? $effectiveRepoVersion : null);
+// Legacy hosts occasionally re-enable Apache during package recovery; perform
+// the stop/disable/mask sequence twice so hosts drifting between bullseye and
+// bookworm converge reliably. Success = units masked and no apache2 processes
+// left running. Failure is tolerated but logged via runStep.
 runStep('Stopping Apache httpd (legacy)', 'systemctl stop apache2 || true');
 runStep('Disabling Apache httpd service', 'systemctl disable apache2 || true');
 runStep('Masking Apache httpd service', 'systemctl mask apache2 || true');

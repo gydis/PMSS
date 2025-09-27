@@ -1,5 +1,14 @@
 #!/usr/bin/php
 <?php
+/**
+ * Nightly quota refresher.
+ *
+ * - Requires `quota` utilities and filesystem support for per-user quotas.
+ * - Runs `quota -u <user>` for every tenant, storing the human-readable output
+ *   in `/home/<user>/.quota` for support tooling.
+ * - Logs failures via `Logger`, then continues to the next user so one broken
+ *   account does not halt the sweep.
+ */
 // Update & check user quota information
 const LOG_FILE     = '/var/log/pmss/updateQuotas.log';
 const FALLBACK_LOG = '/tmp/updateQuotas.log';

@@ -10,6 +10,17 @@
  *
  * Keep this file largely self-contained – it may be the only asset available
  * on rescue systems. All richer orchestration happens inside update-step2.php.
+ *
+ * | Flag / Spec        | Purpose |
+ * | ------------------ | ------- |
+ * | `<spec>`           | Optional version identifier. Accepts `git/<branch>[:YYYY-MM-DD]`, `release[:tag]`, or `main` to reuse the last recorded spec. |
+ * | `--dry-run`        | Exercise fetch/staging logic without copying files or running phase 2. Implies JSON/profile logging when configured. |
+ * | `--scripts-only`   | Deploy refreshed `/scripts` and `/etc/skel` content, skip `update-step2.php`. Useful for emergency hotfixes. |
+ * | `--repo=<url>`     | Override the git remote used for `git/*` specs. Combined with `--branch` to pin alternate forks. |
+ * | `--branch=<name>`  | Branch used with `--repo`. Defaults to `main` when unspecified. |
+ * | `--dist-upgrade`   | Run `scripts/util/update-dist-upgrade.php` to perform a Debian release upgrade, then exit. |
+ * | `--skip-self-update` | Internal flag injected during self-refresh to avoid recursion; operators should not pass it manually. |
+ * | `--help`           | Print usage examples and exit without making changes. |
  */
 
 declare(strict_types=1);
@@ -529,7 +540,16 @@ function runUpdateStep2(bool $dryRun): void
         return;
     }
 
-    // #TODO Add a preflight probe (disk, network, apt reachability) before invoking phase 2.
+    // Preflight expectations before handing off to phase 2:
+    //   * Ensure at least ~2 GB free on the root filesystem so dpkg baselines and
+    //     queued packages have room for temporary archives.
+    //   * Verify network reachability for the configured repository mirror so
+    //     apt can synchronise metadata (e.g., `apt-get update --dry-run`).
+    //   * Confirm `/var/lib/dpkg/lock` is clear and `dpkg --audit` reports no
+    //     outstanding breakage. update-step2 assumes package repair already
+    //     succeeded.
+    // These checks are currently advisory; add explicit probes here before
+    // invoking update-step2 once the automation is ready to enforce them.
     logmsg('Handing off to update-step2.php');
     logEvent('update_step2_start');
     $start = microtime(true);

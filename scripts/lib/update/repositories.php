@@ -6,6 +6,82 @@
 require_once __DIR__.'/apt.php';
 require_once __DIR__.'/runtime/commands.php';
 
+if (!function_exists('pmssEnsureRepositoryPrerequisites')) {
+    /**
+     * Ensure external repositories have their prerequisites (keys/config) in place before apt update.
+     */
+    function pmssEnsureRepositoryPrerequisites(): void
+    {
+        pmssEnsureMediaareaRepository();
+    }
+}
+
+if (!function_exists('pmssEnsureMediaareaRepository')) {
+    /**
+     * MediaArea ships the latest mediainfo build; ensure its repo package is present for GPG keys.
+     */
+    function pmssEnsureMediaareaRepository(): void
+    {
+        $status = pmssQueryPackageStatus('repo-mediaarea');
+        $keyFiles = [
+            '/etc/apt/trusted.gpg.d/mediaarea.gpg',
+            '/etc/apt/trusted.gpg.d/mediaarea.asc',
+            '/etc/apt/trusted.gpg.d/mediaarea-keyring.gpg',
+        ];
+
+        $override = getenv('PMSS_MEDIAAREA_KEY_PATHS');
+        if (is_string($override) && $override !== '') {
+            $candidates = array_map('trim', explode(PATH_SEPARATOR, $override));
+            $candidates = array_filter($candidates, static fn($path) => $path !== '');
+            if (!empty($candidates)) {
+                $keyFiles = $candidates;
+            }
+        }
+
+        foreach ($keyFiles as $key) {
+            if (is_file($key)) {
+                return;
+            }
+        }
+
+        if ($status === 'install ok installed') {
+            return;
+        }
+
+        $tmpDir = sys_get_temp_dir().'/pmss-mediaarea-'.bin2hex(random_bytes(6));
+        if (!is_dir($tmpDir) && !@mkdir($tmpDir, 0700, true)) {
+            logmsg('[WARN] Unable to create temp dir for MediaArea repository bootstrap');
+            return;
+        }
+
+        $packageUrl  = 'https://mediaarea.net/repo/deb/repo-mediaarea_1.0-20_all.deb';
+        $packagePath = $tmpDir.'/repo-mediaarea.deb';
+
+        $downloadCmd = sprintf('wget -q -O %s %s', escapeshellarg($packagePath), escapeshellarg($packageUrl));
+        if (runStep('Fetching MediaArea repository package', $downloadCmd) !== 0) {
+            @unlink($packagePath);
+            @rmdir($tmpDir);
+            return;
+        }
+
+        runStep('Installing MediaArea repository package', sprintf('dpkg -i %s', escapeshellarg($packagePath)));
+        @unlink($packagePath);
+        @rmdir($tmpDir);
+    }
+}
+
+if (!function_exists('pmssQueryPackageStatus')) {
+    /**
+     * Return dpkg status string (install ok installed, etc.) for a package.
+     */
+    function pmssQueryPackageStatus(string $package): string
+    {
+        $cmd = 'dpkg-query -W -f=${Status} '.escapeshellarg($package).' 2>/dev/null';
+        exec($cmd, $output, $rc);
+        return $rc === 0 && isset($output[0]) ? trim($output[0]) : '';
+    }
+}
+
 if (!function_exists('pmssRepositoryUpdatePlan')) {
     /**
      * Build a dry-run friendly plan describing how repository configuration should evolve.
@@ -49,6 +125,7 @@ if (!function_exists('pmssRefreshRepositories')) {
      */
     function pmssRefreshRepositories(string $distroName, int $distroVersion, ?callable $logger = null): void
     {
+        pmssEnsureRepositoryPrerequisites();
         $plan = pmssRepositoryUpdatePlan($distroName, $distroVersion, $logger);
         if ($plan['mode'] === 'reuse') {
             runStep('Refreshing apt package index (existing sources)', aptCmd('update'));

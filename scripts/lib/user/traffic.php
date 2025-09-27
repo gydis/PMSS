@@ -1,6 +1,13 @@
 <?php
 /**
  * Traffic- and quota-related helpers for user provisioning.
+ *
+ * Expected $user keys:
+ *   - `name` (string) – Unix account.
+ *   - `trafficLimit` (int|null) – Monthly quota in GiB; <=1 disables throttling.
+ *   - `quota` (int) – Disk quota in GiB; converted to blocks/inodes below.
+ *   - `CPUWeight` / `IOWeight` (optional ints) – Set elsewhere but carried with
+ *     the user array for holistic resource adjustments.
  */
 
 require_once __DIR__.'/helpers.php';
