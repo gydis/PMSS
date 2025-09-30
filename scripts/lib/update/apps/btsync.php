@@ -12,13 +12,17 @@
  * @author  Aleksi Ursin <aleksi@magnacapax.fi>
  * @copyright 2010-2025 Magna Capax Finland Oy
  */
+// #TODO Migrate to dpkg baseline/repo-driven install; verify downloads and
+//      refactor to runStep wrappers for consistent JSON logging.
 
 if (!file_exists('/usr/bin/btsync1.4')) {
+    // #TODO Switch to HTTPS and checksum validation.
     echo "*** BTSync 1.4 not present, downloading and adding!\n";
     passthru("wget http://pulsedmedia.com/remote/pkg/btsync -O /usr/bin/btsync1.4; chmod 755 /usr/bin/btsync1.4");
 }
 
 if (!file_exists('/usr/bin/btsync2.2')) {
+    // #TODO Switch to HTTPS and checksum validation.
     echo "*** BTSync 2.2 not present, downloading and adding!\n";
     passthru("wget http://pulsedmedia.com/remote/pkg/btsync2.2 -O /usr/bin/btsync2.2; chmod 755 /usr/bin/btsync2.2");
 }
@@ -53,6 +57,7 @@ if ($rslsyncOutput === '' || strpos($rslsyncOutput, $rslsyncExpected) === false)
     } else {
         echo "*** Resilio Sync not present, downloading package\n";
     }
+    // #TODO Switch to HTTPS and checksum validation; prefer managed packaging.
     passthru("wget http://pulsedmedia.com/remote/pkg/rslsync -O {$rslsyncBinary}; chmod 755 {$rslsyncBinary}");
 } else {
     echo "*** Resilio Sync already at target version ({$rslsyncExpected}); skipping download\n";

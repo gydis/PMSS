@@ -1,5 +1,7 @@
 <?php
 // OpenVPN installation script
+// #TODO Replace ad-hoc exec/backticks with runStep wrappers and move package
+//       management to dpkg baselines/repo installs where possible.
 
 // Host naming //
 // .pulsedmedia.com gets appended if it's missing
@@ -23,6 +25,7 @@ if (!file_exists('/etc/openvpn/easy-rsa')) {
     // EasyRSA installation //
     if ($debianVersion[0] == 8) {
         // If running on Debian 8, fetch an up-to-date copy of EasyRSA
+        // #TODO Switch to HTTPS and checksum validation.
         `cd /etc/openvpn; wget https://github.com/OpenVPN/easy-rsa/releases/download/v3.1.1/EasyRSA-3.1.1.tgz; tar -xzf EasyRSA-3.1.1.tgz; mv EasyRSA-3.1.1 easy-rsa; cd -`;
     } else {
         `cp -r /usr/share/easy-rsa /etc/openvpn/`;

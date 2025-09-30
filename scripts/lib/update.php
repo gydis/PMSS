@@ -53,6 +53,10 @@ function pmssSkeletonPath(string $relative): string
  * @param string $user The username whose file should be updated.
  */
 function updateUserFile($file, $user) {
+    // #TODO Replace delete-then-copy with an atomic safe-write helper:
+    //       write to a temp file in the same directory then rename.
+    //       Preserve existing mode/owner when content is unchanged.
+    // #TODO Add hermetic tests covering safe-write behavior.
     if (empty($file) || empty($user) || !file_exists("/home/{$user}")) {
         echo "Invalid parameters, file: {$file} user: {$user}\n";
         return;

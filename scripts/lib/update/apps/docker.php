@@ -1,5 +1,8 @@
 <?php
 // Rootless Docker installation script for Debian 10, 11, and 12
+// #TODO Refactor to use runStep() for consistent logging instead of passthru.
+// #TODO Move repo bootstrap into a unified third-party repo helper (deb822
+//       sources + /etc/apt/keyrings signed-by) and reuse here.
 
 // Define required packages
 $requiredPackages = ["dbus-user-session", "slirp4netns", "uidmap"];
@@ -25,6 +28,7 @@ $debianCodename = trim(shell_exec(". /etc/os-release && echo \$VERSION_CODENAME"
 $repoEntry = "deb [arch=" . trim(shell_exec("dpkg --print-architecture")) . " signed-by=/etc/apt/keyrings/docker.asc] ";
 $repoEntry .= "https://download.docker.com/linux/debian $debianCodename stable";
 file_put_contents("/etc/apt/sources.list.d/docker.list", $repoEntry . "\n");
+// #TODO Convert to deb822 .sources file format for consistency across repos.
 
 passthru("apt update -y");
 passthru("apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y");

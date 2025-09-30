@@ -14,6 +14,10 @@
  *
  * @author  Aleksi Ursin <aleksi@magnacapax.fi>
  * @copyright 2010-2025 Magna Capax Finland Oy
+ *
+ * #TODO Replace HTTP downloads and ad-hoc compiles with a reproducible,
+ *       package-based approach (dpkg baselines or managed repository).
+ * #TODO Refactor to use runStep wrappers and verify downloads via checksums.
  */
 
 $rtorrentVersion = shell_exec('rtorrent -h');
@@ -53,6 +57,7 @@ if (strpos($rtorrentVersion, "version {$rtorrentVersionTarget}.") === false) {  
     
     
     echo "**** get new packages\n";
+    // #TODO Switch to HTTPS and add checksum/GPG verification.
     passthru("cd /tmp; wget http://pulsedmedia.com/remote/pkg/rtorrent-{$rtorrentVersionTarget}.tar.gz; wget http://pulsedmedia.com/remote/pkg/libtorrent-{$rtorrentVersionTargetLib}.tar.gz");
         
     echo "**** uncompressing ...\n";

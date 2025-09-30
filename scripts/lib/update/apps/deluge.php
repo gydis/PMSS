@@ -1,4 +1,7 @@
 <?php
+// #TODO Refactor this installer to use virtualenv instead of system-wide pip.
+// #TODO Pin Python package versions explicitly; avoid unbounded upgrades.
+// #TODO Replace passthru/backticks with runStep wrappers for consistent logging.
 if (empty($debianVersion)) $debianVersion = file_get_contents('/etc/debian_version');
 
 echo "#### Deluge install // update\n";
@@ -6,7 +9,6 @@ echo "#### Deluge install // update\n";
 
 if (substr($debianVersion, 0, 2) == 10) {
   echo "\t*** Deluge pip install:\n";
-  // #TODO migrate to dedicated virtualenv; system pip install breaks debian packaging
   passthru('pip install --upgrade twisted[tls] chardet mako pyxdg pillow slimit pygame certifi pyasn1==0.4.6 ');
   passthru('pip install --upgrade pillow'); // For some bizarre pythoness need to run this separately too???  UPD: Still fails occasionally?
   passthru('cd /tmp; rm -rf deluge-2*; wget https://ftp.osuosl.org/pub/deluge/source/2.0/deluge-2.0.5.tar.xz; tar -xvf deluge-2.0.5.tar.xz;');
@@ -22,4 +24,3 @@ if (substr($debianVersion, 0, 2) == 10) {
 
 if (file_exists('/usr/bin/deluged') &&
     !file_exists('/usr/local/bin/deluged') ) passthru('ln -s /usr/bin/deluge-web /usr/local/bin/deluge-web; ln -s /usr/bin/deluged /usr/local/bin/deluged; ');
-

@@ -48,7 +48,10 @@ function pmssQueuePackages(array $packages, ?string $target = null): void
     }
 }
 
-// #TODO retire queue once dpkg baselines are authoritative for every package on every host.
+// #TODO Retire this queue once dpkg baselines are authoritative for every
+//       package on every host. Add a diff summary step that logs packages
+//       present-but-not-in-baseline and missing-from-host to help converge
+//       systems before removing the queue entirely.
 
 function pmssQueuePackage(string $package, ?string $target = null): void
 {

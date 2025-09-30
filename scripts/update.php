@@ -475,6 +475,8 @@ function recordVersion(string $spec, array $details, bool $dryRun): void
 
     @file_put_contents(VERSION_FILE, $line.PHP_EOL);
     @file_put_contents(VERSION_META, json_encode($details, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
+    // #TODO Ensure consistent permissions (0640) on version metadata and any
+    //       future config artifacts written here.
 }
 
 function cleanup(string $path): void
@@ -548,8 +550,11 @@ function runUpdateStep2(bool $dryRun): void
     //   * Confirm `/var/lib/dpkg/lock` is clear and `dpkg --audit` reports no
     //     outstanding breakage. update-step2 assumes package repair already
     //     succeeded.
-    // These checks are currently advisory; add explicit probes here before
-    // invoking update-step2 once the automation is ready to enforce them.
+    // #TODO Implement explicit preflight probes and a `--check` mode that only
+    //       runs these checks and exits non-zero on failure. Emit JSON events
+    //       like `preflight_ok` / `preflight_error` for automation.
+    // #TODO Add hermetic tests for preflight planner (disk space, dpkg lock,
+    //       apt reachability) using environment overrides and temp paths.
     logmsg('Handing off to update-step2.php');
     logEvent('update_step2_start');
     $start = microtime(true);

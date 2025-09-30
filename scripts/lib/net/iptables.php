@@ -29,6 +29,8 @@ function iptablesParseMonitoring(string $raw): array
 
 function iptablesApplyAtomically(array $filterCommands, array $natCommands): bool
 {
+    // #TODO Add hermetic tests that assert the rendered iptables-restore
+    //       payload structure for both filter and nat sections.
     $sections = [];
     if ($filterCommands) {
         $filter = ['*filter', ':INPUT ACCEPT [0:0]', ':FORWARD ACCEPT [0:0]', ':OUTPUT ACCEPT [0:0]'];
@@ -58,6 +60,7 @@ function iptablesApplyAtomically(array $filterCommands, array $natCommands): boo
 
 function iptablesApplyFallback(array $filterCommands, array $natCommands, array $replacements): void
 {
+    // #TODO Add tests to validate replacement and nat prefixing behavior.
     iptablesRun('-F INPUT');
     iptablesRun('-F FORWARD');
     iptablesRun('-F OUTPUT');

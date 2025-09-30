@@ -117,7 +117,6 @@ pmssConfigureAptNonInteractive('logmsg');
 //   3. Autoremove strays that block upgrades
 //   4. Apply the dpkg baseline and queued package installs
 // Resist the urge to move or delete any of these steps.
-// #TODO Collapse per-app package queues once dpkg baselines carry the complete manifest.
 // -------------------------------------------------------------------------------------------
 
 runStep('Attempting apt fix-broken install (pre-package phase)', aptCmd('--fix-broken install -y'));
@@ -154,6 +153,9 @@ require_once __DIR__.'/../lib/update/users.php';
 // Refresh repositories and install queued packages before any other orchestration.
 pmssRefreshRepositories($distroName, $effectiveRepoVersion, 'logmsg');
 pmssAutoremovePackages();
+// #TODO Finish migration: once dpkg baselines cover all apps on all hosts,
+//       replace queued installs with a diff-summary report and remove the
+//       per-app package queue entirely.
 include_once '/scripts/lib/update/apps/packages.php';
 pmssFlushPackageQueue();
 pmssAutoremovePackages();

@@ -9,8 +9,10 @@ if (!function_exists('pmssEnsureQuotaOptions')) {
     /**
      * Ensure the given mount point in /etc/fstab contains the quota options.
      */
-    function pmssEnsureQuotaOptions(string $mountPoint, array $requiredOptions = null, ?callable $logger = null): void
+function pmssEnsureQuotaOptions(string $mountPoint, array $requiredOptions = null, ?callable $logger = null): void
     {
+        // #TODO Add hermetic tests that verify fstab line parsing and option
+        //       insertion behavior for common edge cases.
         $log = pmssSelectLogger($logger);
         if ($mountPoint === '') {
             return;

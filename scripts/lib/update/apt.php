@@ -89,6 +89,8 @@ function pmssUpdateAptSources(string $distroName, int $distroVersion, string $cu
     array $repos, ?callable $logger = null): void
 {
     $log = pmssSelectLogger($logger);
+    // #TODO Convert to deb822 sources (`/etc/apt/sources.list.d/*.sources`) and
+    //       use `/etc/apt/keyrings` with `signed-by` for all external repos.
 
     if ($distroVersion <= 0) {
         $log(sprintf('Skipping repository update for %s: unknown version', $distroName));

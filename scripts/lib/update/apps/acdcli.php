@@ -10,6 +10,7 @@ require_once __DIR__.'/../runtime/commands.php';
 require_once __DIR__.'/../logging.php';
 
 $dryRun = getenv('PMSS_DRY_RUN') === '1';
+// #TODO Pin acd_cli to a specific commit/tag to avoid unbounded upgrades.
 
 $python = trim((string) @shell_exec('command -v python3 2>/dev/null'));
 if ($python === '') {

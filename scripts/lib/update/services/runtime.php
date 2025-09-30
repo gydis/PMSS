@@ -32,6 +32,8 @@ if (!function_exists('pmssEnsureAuthorizedKeysDirective')) {
      */
     function pmssEnsureAuthorizedKeysDirective(): void
     {
+        // #TODO Add tests for directive insertion to ensure idempotence and
+        //       safe in-place updates of sshd_config.
         $config = @file_get_contents('/etc/ssh/sshd_config');
         if ($config === false) {
             return;

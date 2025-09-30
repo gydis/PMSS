@@ -10,9 +10,13 @@ if (!function_exists('pmssEnsureRepositoryPrerequisites')) {
     /**
      * Ensure external repositories have their prerequisites (keys/config) in place before apt update.
      */
-    function pmssEnsureRepositoryPrerequisites(): void
+function pmssEnsureRepositoryPrerequisites(): void
     {
         pmssEnsureMediaareaRepository();
+        // #TODO Provide a unified third-party repo bootstrap that accepts
+        //       (name, url, suites, components, key-url/keyring) and writes a
+        //       deb822 .sources file with signed-by keyring under
+        //       /etc/apt/keyrings.
     }
 }
 
@@ -20,8 +24,12 @@ if (!function_exists('pmssEnsureMediaareaRepository')) {
     /**
      * MediaArea ships the latest mediainfo build; ensure its repo package is present for GPG keys.
      */
-    function pmssEnsureMediaareaRepository(): void
+function pmssEnsureMediaareaRepository(): void
     {
+        // #TODO Prefer deb822 sources and `/etc/apt/keyrings` over legacy
+        //       trusted.gpg.d entries. Unify MediaArea/Docker and other
+        //       third-party repos behind a single helper that manages
+        //       keyrings and source files consistently.
         $status = pmssQueryPackageStatus('repo-mediaarea');
         $keyFiles = [
             '/etc/apt/trusted.gpg.d/mediaarea.gpg',

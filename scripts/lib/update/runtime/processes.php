@@ -12,6 +12,9 @@ if (!function_exists('killProcess')) {
      */
     function killProcess(string $name, string $description): void
     {
+        // #TODO Implement a graceful termination helper:
+        //       stop (if service), then SIGTERM with timeout, finally SIGKILL.
+        //       Build a reusable library to replace repeated killall -9 usage.
         exec('pgrep -x '.escapeshellarg($name).' >/dev/null 2>&1', $_, $status);
         if ($status !== 0) {
             logmsg("[SKIP] {$description} (no {$name} processes)");
