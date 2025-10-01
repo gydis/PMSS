@@ -115,6 +115,20 @@ function usage(string $script): void
 /**
  * Parse CLI arguments.
  */
+/**
+ * Parse CLI arguments for the bootstrap updater.
+ *
+ * Inputs:
+ *  - argv array from PHP entrypoint (index 0 is the script path)
+ *  - Accepts: <spec>, --dry-run, --dist-upgrade, --scripts-only,
+ *             --repo=<url>, --branch=<name>, and internal --skip-self-update
+ * Behavior:
+ *  - Synthesizes `spec` when --repo/--branch are supplied
+ *  - Defaults spec to storedSpec() or 'git/main' when omitted
+ * Output: associative array with keys:
+ *  - dry_run(bool), dist_upgrade(bool), scripts_only(bool),
+ *    skip_self_update(bool), spec(string), repo(?string), branch(?string)
+ */
 function parseArguments(array $argv): array
 {
     $options = [
@@ -195,6 +209,12 @@ function defaultSpec(): string
     return 'git/main';
 }
 
+/**
+ * Normalize a user-provided version spec into canonical form.
+ *
+ * Supports: 'git/<branch>[:YYYY-MM-DD]', 'release[:tag]', 'git <branch>',
+ * bare branch names, and URLs. Returns '' for invalid/unsupported input.
+ */
 function normaliseSpec(string $spec): string
 {
     $spec = trim($spec);
@@ -221,6 +241,13 @@ function normaliseSpec(string $spec): string
     return '';
 }
 
+/**
+ * Parse a normalized spec into components.
+ *
+ * Input must start with 'git/' or 'release:' or 'release/'. On success returns
+ * ['type' => 'git'|'release', 'repo' => string, 'branch' => string, 'pin' => string].
+ * On failure calls fatal(EXIT_PARSE).
+ */
 function parseSpec(string $spec): array
 {
     if (!preg_match('/^(git|release)([\/:])(.*)$/i', $spec, $m)) {
@@ -302,6 +329,14 @@ function resolveLatestRelease(): string
     return $tag;
 }
 
+/**
+ * Fetch the requested snapshot into a temporary directory.
+ *
+ * For 'release': downloads the GitHub tarball for the tag (or latest) and
+ * extracts into `$tmp`. For 'git': shallow clones the branch into `$tmp` and
+ * optionally checks out `<branch>@{<pin>}` if a date pin is provided.
+ * Fatal on failure.
+ */
 function fetchSnapshot(array $spec, string $tmp): void
 {
     if ($spec['type'] === 'release') {
@@ -385,6 +420,14 @@ function directoryHasContent(string $path): bool
     return false;
 }
 
+/**
+ * Stage snapshot trees into place.
+ *
+ * Copies `scripts/`, `etc/`, and `var/` from `$tmp` into the live filesystem.
+ * Wipes previous `/scripts/*`, clears `/etc/skel/*` when snapshot contains a
+ * skel tree, and hardens permissions. When `$dryRun` is true, only logs planned
+ * actions. Fatal on copy/permission failures.
+ */
 function stageSnapshot(string $tmp, bool $dryRun): void
 {
     ensureSnapshot($tmp);
@@ -457,6 +500,12 @@ function collectCommitHash(string $tmp): string
     return trim((string)$rev);
 }
 
+/**
+ * Record the applied version for auditability.
+ *
+ * Writes a one-line spec with timestamp to VERSION_FILE and a JSON metadata
+ * object to VERSION_META. Skips writes when dry-run is enabled.
+ */
 function recordVersion(string $spec, array $details, bool $dryRun): void
 {
     if ($dryRun) {
@@ -526,6 +575,12 @@ function currentUpdaterHash(): string
     return $hash === false ? '' : $hash;
 }
 
+/**
+ * Hand off to phase 2 orchestrator when appropriate.
+ *
+ * Exports the JSON log path, handles dry-run and missing file cases gracefully,
+ * logs duration and exit status as JSON events, and fatals on non-zero status.
+ */
 function runUpdateStep2(bool $dryRun): void
 {
     putenv('PMSS_JSON_LOG='.JSON_LOG);

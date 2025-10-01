@@ -1,6 +1,9 @@
 # Repository Guidelines
 
 ## Project Context
+Note: Canonical behavior and workflows are documented in `docs/architecture.md`
+and `docs/update.md`. Prefer reading those and cross-referencing from here
+instead of restating details.
 ## Architecture Cheat Sheet
 - **Before touching any code**, read `docs/architecture.md` and the related workflow docs in `docs/update.md` / `docs/install.md`. These describe the provisioning hierarchy (install → update.php → update-step2) and must be understood prior to making changes.
 
