@@ -1,70 +1,42 @@
 #!/usr/bin/php
 <?php
 /**
- * Update a tenant's system and HTTP credentials (hardened).
+ * Update a tenant's system and HTTP credentials.
  *
- * - Optional PASSWORD argument; otherwise generated using the legacy seed so
- *   existing automation retains predictable entropy.
- * - Sets the Unix password via chpasswd using stdin (no shell pipelines).
- * - Updates the per-user lighttpd htpasswd using proc_open without a shell and
- *   applies file ownership via PHP, avoiding raw string interpolation.
- * - Prints the password to stdout for operator visibility.
+ * - Accepts an optional password argument; otherwise generates one using the
+ *   legacy seed algorithm so existing automation keeps predictable entropy.
+ * - Invokes `passwd` for the Unix account and rewrites the lighttpd htpasswd
+ *   entry (creating the file when missing).
+ * - Passwords are echoed to the operator; call sites must ensure the terminal
+ *   history is handled appropriately.
  */
-
-require_once __DIR__.'/lib/user/UserValidator.php';
-
 $usage = 'Usage: changePw.php USERNAME [PASSWORD]';
 if (empty($argv[1])) die($usage . "\nPassword is optional - random one will be generated if it's empty\n");
+if (!file_exists("/home/{$argv[1]}") or
+    !is_dir("/home/{$argv[1]}")) die("\t**** USER NOT FOUND ****\n\n");
 
 $username = $argv[1];
-if (!file_exists("/home/{$username}") || !is_dir("/home/{$username}")) die("\t**** USER NOT FOUND ****\n\n");
-
-// Honor username validation rules from the repository
-if (!UserValidator::isValidUsername($username)) {
-    die("Invalid username format\n");
-}
-
-$password = empty($argv[2]) ? generatePassword() : $argv[2];
-// Avoid CR/LF to keep chpasswd input well-formed
-$password = str_replace(["\r", "\n"], '', $password);
-
+if (empty($argv[2])) $password = generatePassword();
+    else $password = $argv[2];
+    
 echo "\t *******  {$username}     new password:   {$password} \n";
 
-/** Execute a program without a shell; optionally write to stdin. */
-function pmssRunProgram(array $cmd, ?string $stdin = null): int
-{
-    $spec = [0 => ['pipe', 'w'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-    $proc = proc_open($cmd, $spec, $pipes, null, null, ['bypass_shell' => true]);
-    if (!is_resource($proc)) return 1;
-    if ($stdin !== null) fwrite($pipes[0], $stdin);
-    fclose($pipes[0]);
-    if (is_resource($pipes[1])) { stream_get_contents($pipes[1]); fclose($pipes[1]); }
-    if (is_resource($pipes[2])) { stream_get_contents($pipes[2]); fclose($pipes[2]); }
-    return proc_close($proc);
-}
+shell_exec('echo "' . $password . '\n' . $password . '"|passwd ' . $username);
 
-// 1) Update system password using chpasswd (stdin avoids shell injection)
-$chpasswdRc = pmssRunProgram(['chpasswd'], $username.':'.$password."\n");
-if ($chpasswdRc !== 0) {
-    fwrite(STDERR, "Failed to update system password (rc={$chpasswdRc})\n");
-}
+$htpasswdFile = "/home/{$username}/.lighttpd/.htpasswd";
 
-// 2) Update per-user HTTP password for lighttpd
-$htDir = "/home/{$username}/.lighttpd";
-if (!is_dir($htDir)) {
-    @mkdir($htDir, 0755, true);
-}
-$htFile = $htDir.'/.htpasswd';
-$create = file_exists($htFile) ? [] : ['-c'];
-// WARNING: -b places password on argv; acceptable for now.
-// #TODO Consider stdin/expect-based update to avoid argv exposure.
-$args = array_merge(['htpasswd', '-b', '-m'], $create, [$htFile, $username, $password]);
-$htRc = pmssRunProgram($args);
-if ($htRc !== 0) {
-    fwrite(STDERR, "Failed to update htpasswd file (rc={$htRc})\n");
-}
-@chown($htFile, $username);
-@chgrp($htFile, $username);
+if (file_exists("/home/{$username}/.lighttpd/.htpasswd")) $htpasswdCommand = 'htpasswd -b -m';
+    else $htpasswdCommand = 'htpasswd -c -b -m';
+
+shell_exec("{$htpasswdCommand} {$htpasswdFile} {$username} {$password}");     // Create http password
+passthru("chown {$username}.{$username} /home/{$username}/.lighttpd/.htpasswd");
+
+
+
+
+
+
+
 
 function generatePassword(): string
 {
@@ -84,7 +56,9 @@ function generatePassword(): string
     return $prefix . $middle . $suffix;
 }
 
-/** Reproduce the historic password entropy logic for prefix/suffix material. */
+/**
+ * Reproduce the historic password entropy logic for prefix/suffix material.
+ */
 function legacyPasswordSeed(): string
 {
     $salts = file_get_contents('/etc/hostname');
