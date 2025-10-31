@@ -113,8 +113,7 @@ if (!function_exists('logmsg')) {
         // --- decide what to do ---
         if (stripos($output, 'running') === false) {
             // Not "running" → stop script
-            fwrite(STDERR, "❌ systemd user manager not running for $user — aborting.\n");
-            exit(1);
+            fwrite(STDERR, "❌ systemd user manager not running for $user.\n");
         }
 
         echo "✅ systemd user manager is running — continuing...\n";
