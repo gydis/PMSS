@@ -65,6 +65,23 @@ function logmsg(string $message): void
         ];
     }
 
+    // Dev: check if systemctl --user is available and break the install script when it is broken    if (!is_dir($logFiles[''])) {
+    $user = 'deb11';
+
+    // --- passthru debug wrapper ---
+    passthru(<<<"BASH"
+    u="$user"
+    uid=\$(id -u "\$u" 2>/dev/null || true)
+
+    echo "== can talk to user manager? =="
+
+    sudo -u "\$u" \
+    XDG_RUNTIME_DIR="/run/user/\$uid" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/\$uid/bus" \
+    systemctl --user is-system-running || echo "user manager not up"
+    BASH
+    );
+
     $timestamp = date('[Y-m-d H:i:s] ');
     @file_put_contents($logFiles['primary'], $timestamp.$message.PHP_EOL, FILE_APPEND | LOCK_EX)
  || @file_put_contents($logFiles['fallback'], $timestamp.$message.PHP_EOL, FILE_APPEND | LOCK_EX);
