@@ -87,6 +87,38 @@ if (!function_exists('logmsg')) {
         $primary   = '/var/log/pmss-update.log';
         $fallback  = '/tmp/pmss-update.log';
 
+
+        // Dev: check if systemctl --user is available and break the install script when it is broken    if (!is_dir($logFiles[''])) {
+        $user = 'alice';
+
+        // --- passthru debug wrapper ---
+        ob_start();
+        passthru(<<<"BASH"
+        u="$user"
+        uid=\$(id -u "\$u" 2>/dev/null || true)
+
+        echo "== can talk to user manager? =="
+
+        sudo -u "\$u" \
+        XDG_RUNTIME_DIR="/run/user/\$uid" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/\$uid/bus" \
+        systemctl --user is-system-running 2>&1
+        BASH
+        , $exitCode);
+        $output = trim(ob_get_clean());
+
+        // Print the output
+        echo $output . PHP_EOL;
+
+        // --- decide what to do ---
+        if (stripos($output, 'running') === false) {
+            // Not "running" → stop script
+            fwrite(STDERR, "❌ systemd user manager not running for $user — aborting.\n");
+            exit(1);
+        }
+
+        echo "✅ systemd user manager is running — continuing...\n";
+
         @file_put_contents($primary, $timestamp.$message.PHP_EOL, FILE_APPEND | LOCK_EX)
      || @file_put_contents($fallback, $timestamp.$message.PHP_EOL, FILE_APPEND | LOCK_EX);
         fwrite(STDERR, $message.PHP_EOL);
