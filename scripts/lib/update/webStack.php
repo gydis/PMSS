@@ -64,6 +64,6 @@ if (!function_exists('pmssPostUpdateWebRefresh')) {
         runStep('Post-update nginx configuration refresh', '/scripts/util/createNginxConfig.php');
         runStep('Post-update htpasswd verification', '/scripts/util/checkUserHtpasswd.php');
         runStep('Restarting nginx after configuration refresh', '/etc/init.d/nginx restart');
-        runStep('Checking lighttpd instances after update', '/scripts/cron/checkLighttpdInstances.php');
+        // runStep('Checking lighttpd instances after update', '/scripts/cron/checkLighttpdInstances.php');
     }
 }
