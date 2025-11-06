@@ -35,7 +35,7 @@ if (!function_exists('pmssConfigureWebStack')) {
         runStep('Regenerating nginx configuration', '/scripts/util/createNginxConfig.php');
         runStep('Verifying user HTTP authentication files', '/scripts/util/checkUserHtpasswd.php');
         runStep('Restarting nginx service', '/etc/init.d/nginx restart');
-        runStep('Checking lighttpd per-user instances', '/scripts/cron/checkLighttpdInstances.php');
+        //runStep('Checking lighttpd per-user instances', '/scripts/cron/checkLighttpdInstances.php');
         runStep('Setting /home directory permissions', 'chmod 751 /home');
         runStep('Setting user home directory permissions', 'chmod 740 /home/*');
     }
